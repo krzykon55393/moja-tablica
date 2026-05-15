@@ -4,14 +4,14 @@ import { useBoardStore, Tool } from '../store/useBoardStore';
 import { useRef } from 'react';
 import { 
   MousePointer2, Hand, Shapes, 
-  Type, Image as ImageIcon, Eraser, FileText, Minus, Plus, Undo2, Redo2, Wand2, Highlighter, Bot
+  Type, Image as ImageIcon, Eraser, FileText, Minus, Plus, Undo2, Redo2, Wand2, Highlighter, Bot, KeyRound
 } from 'lucide-react';
 
 export default function Toolbar() {
   const {
     activeTool, setActiveTool, setShapesPanelOpen,
     addImage, stagePos, stageScale, setStageScale, cursorPosition,
-    isPdfPanelOpen, setIsPdfPanelOpen, uiScale,
+    isPdfPanelOpen, setIsPdfPanelOpen, isAnswersPanelOpen, setIsAnswersPanelOpen, uiScale,
     canUndo, canRedo, undo, redo
   } = useBoardStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +149,16 @@ export default function Toolbar() {
             title="Panel PDF / dokumentu"
           >
             <FileText size={22} />
+          </button>
+          <button
+            onClick={() => {
+              setActiveTool('select');
+              setIsAnswersPanelOpen(!isAnswersPanelOpen);
+            }}
+            className={`p-2.5 rounded-xl transition-all ${isAnswersPanelOpen ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400' : 'text-gray-900 hover:bg-gray-100'}`}
+            title="Odpowiedzi do testu na tablicy"
+          >
+            <KeyRound size={22} />
           </button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import PdfSidePanel from '../components/PdfSidePanel';
 import ShapesPanel from '../components/ShapesPanel';
 import Toolbar from '../components/Toolbar';
 import BoardAiPanel from '../components/BoardAiPanel';
+import BoardAnswersPanel from '../components/BoardAnswersPanel';
 import { BoardSaveData, useBoardStore } from '../store/useBoardStore';
 
 type BoardRoute = {
@@ -141,6 +142,7 @@ export default function Home() {
       <ShapesPanel />
       <PdfSidePanel />
       <BoardAiPanel />
+      <BoardAnswersPanel />
       <div className="toolbar-dock">
         <Toolbar />
       </div>

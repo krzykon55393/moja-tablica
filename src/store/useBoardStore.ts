@@ -89,6 +89,8 @@ interface BoardState {
   setPendingPlacementImage: (image: PendingPlacementImage | null) => void;
   isPdfPanelOpen: boolean;
   setIsPdfPanelOpen: (open: boolean) => void;
+  isAnswersPanelOpen: boolean;
+  setIsAnswersPanelOpen: (open: boolean) => void;
   pdfDocuments: PdfDocumentData[];
   setPdfDocuments: (documents: PdfDocumentData[]) => void;
   addPdfDocument: (document: PdfDocumentData) => void;
@@ -174,6 +176,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setPendingPlacementImage: (pendingPlacementImage) => set({ pendingPlacementImage }),
   isPdfPanelOpen: false,
   setIsPdfPanelOpen: (isPdfPanelOpen) => set(isPdfPanelOpen ? { isPdfPanelOpen, isShapesPanelOpen: false } : { isPdfPanelOpen }),
+  isAnswersPanelOpen: false,
+  setIsAnswersPanelOpen: (isAnswersPanelOpen) => set({ isAnswersPanelOpen }),
   pdfDocuments: [],
   setPdfDocuments: (pdfDocuments) => set({ pdfDocuments, activePdfId: pdfDocuments[0]?.id || null }),
   addPdfDocument: (document) => set((state) => ({
