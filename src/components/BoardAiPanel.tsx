@@ -1,13 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Bot, Calculator, Grip, Loader2, Minus, Move, Sparkles, X } from 'lucide-react';
+import { Bot, Grip, Loader2, Minus, Move, Sparkles, X } from 'lucide-react';
 import { BoardSaveData, useBoardStore } from '../store/useBoardStore';
 
 const getBoardAiUrl = () => {
   const params = new URLSearchParams(window.location.search);
   const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
-  const normalizedApi = window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
+  const normalizedApi = window.location.protocol === 'https:' && api.includes('koreporeczki.cba.pl')
+    ? 'https://core-czki.pl/uczen/board_api.php'
+    : window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
   return normalizedApi.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
 };
 
@@ -29,7 +31,7 @@ export default function BoardAiPanel() {
   const aiCapture = useBoardStore((state) => state.aiCapture);
   const setAiCapture = useBoardStore((state) => state.setAiCapture);
   const [answer, setAnswer] = useState('');
-  const [loadingMode, setLoadingMode] = useState<'calculate' | 'solve' | 'explain' | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [size, setSize] = useState({ width: 350, height: 430 });
   const [pos, setPos] = useState({ x: 20, y: 96 });
 
@@ -37,15 +39,15 @@ export default function BoardAiPanel() {
 
   if (!isOpen) return null;
 
-  const askAi = async (mode: 'calculate' | 'solve' | 'explain') => {
-    setLoadingMode(mode);
+  const askAi = async () => {
+    setIsLoading(true);
     try {
       const response = await fetch(getBoardAiUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          mode,
+          mode: 'solve',
           context: boardContext,
           image: aiCapture?.dataUrl || '',
         }),
@@ -53,13 +55,11 @@ export default function BoardAiPanel() {
       const data = await response.json();
       setAnswer(data.status === 'success' ? data.answer : (data.message || 'Nie udało się uzyskać odpowiedzi AI.'));
     } catch {
-      setAnswer('Nie udało się połączyć z AI. Sprawdź, czy board_ai.php jest wgrany do folderu /uczen i czy link API działa po HTTPS.');
+      setAnswer('Nie udało się połączyć z AI. Sprawdź, czy na serwerze jest aktualny plik /uczen/board_ai.php oraz czy w Vercel NEXT_PUBLIC_BOARD_API_URL wskazuje https://core-czki.pl/uczen/board_api.php.');
     } finally {
-      setLoadingMode(null);
+      setIsLoading(false);
     }
   };
-
-  const actionClass = 'flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2.5 py-2.5 text-xs font-black transition disabled:opacity-60';
 
   return (
     <aside
@@ -130,23 +130,17 @@ export default function BoardAiPanel() {
             )}
           </button>
 
-          <div className="grid grid-cols-3 gap-2">
-            <button onClick={() => askAi('calculate')} disabled={!!loadingMode || !aiCapture} className={`${actionClass} bg-violet-600 text-white hover:bg-violet-700`}>
-              {loadingMode === 'calculate' ? <Loader2 size={15} className="animate-spin" /> : <Calculator size={15} />}
-              Policz
-            </button>
-            <button onClick={() => askAi('solve')} disabled={!!loadingMode || !aiCapture} className={`${actionClass} border border-slate-200 text-slate-800 hover:bg-slate-50`}>
-              {loadingMode === 'solve' ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-              Rozwiąż
-            </button>
-            <button onClick={() => askAi('explain')} disabled={!!loadingMode || !aiCapture} className={`${actionClass} border border-slate-200 text-slate-800 hover:bg-slate-50`}>
-              {loadingMode === 'explain' ? <Loader2 size={15} className="animate-spin" /> : <Bot size={15} />}
-              Wytłumacz
-            </button>
-          </div>
+          <button
+            onClick={askAi}
+            disabled={isLoading || !aiCapture}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-black text-white transition hover:bg-violet-700 disabled:opacity-60"
+          >
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+            Rozwiąż z AI
+          </button>
 
           <div className="mt-3 min-h-32 whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-sm leading-relaxed text-white">
-            {loadingMode ? 'AI pracuje...' : answer}
+            {isLoading ? 'AI pracuje...' : answer}
           </div>
         </div>
 

@@ -7,7 +7,9 @@ import { useBoardStore } from '../store/useBoardStore';
 const getBoardAiUrl = () => {
   const params = new URLSearchParams(window.location.search);
   const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
-  const normalizedApi = window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
+  const normalizedApi = window.location.protocol === 'https:' && api.includes('koreporeczki.cba.pl')
+    ? 'https://core-czki.pl/uczen/board_api.php'
+    : window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
   return normalizedApi.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
 };
 
