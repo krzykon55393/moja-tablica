@@ -4,13 +4,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { Grip, KeyRound, Loader2, Minus, Move, RefreshCw, X } from 'lucide-react';
 import { useBoardStore } from '../store/useBoardStore';
 
-const getBoardAiUrl = () => {
+const getBoardAnswersUrl = () => {
   const params = new URLSearchParams(window.location.search);
   const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
   const normalizedApi = window.location.protocol === 'https:' && api.includes('koreporeczki.cba.pl')
     ? 'https://core-czki.pl/uczen/board_api.php'
     : window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
-  return normalizedApi.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
+  const url = new URL(normalizedApi, window.location.href);
+  url.searchParams.set('action', 'test_answers');
+  return url.toString();
 };
 
 const getRoom = () => {
@@ -30,14 +32,13 @@ export default function BoardAnswersPanel() {
   const loadAnswers = useCallback(async () => {
     setLoading(true);
     try {
-      const url = new URL(getBoardAiUrl());
-      url.searchParams.set('action', 'test_answers');
+      const url = new URL(getBoardAnswersUrl());
       url.searchParams.set('room', getRoom());
       const response = await fetch(url.toString());
       const data = await response.json();
-      setAnswer(data.status === 'success' ? (data.answers || 'Brak wygenerowanych odpowiedzi do zadania domowego/testu.') : (data.message || 'Nie udało się wczytać odpowiedzi.'));
+      setAnswer(data.status === 'success' ? (data.answers || 'Brak wygenerowanych odpowiedzi do testu.') : (data.message || 'Nie udało się wczytać odpowiedzi.'));
     } catch {
-      setAnswer('Nie udało się połączyć z odpowiedziami. Wgraj aktualny board_ai.php do folderu /uczen i upewnij się, że API działa po HTTPS.');
+      setAnswer('Nie udało się połączyć z odpowiedziami. Wgraj aktualny board_api.php do folderu /uczen i upewnij się, że API działa po HTTPS.');
     } finally {
       setLoading(false);
     }
@@ -86,7 +87,7 @@ export default function BoardAnswersPanel() {
           <div className="flex items-center gap-2 text-sm font-black text-amber-900">
             <Move size={16} className="text-amber-500" />
             <KeyRound size={18} />
-            Odpowiedzi do zadania
+            Odpowiedzi do testu
           </div>
           <div className="flex items-center gap-1">
             <button className="rounded-lg p-1.5 hover:bg-amber-100" onClick={loadAnswers} title="Odśwież odpowiedzi">

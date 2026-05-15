@@ -399,6 +399,37 @@ export default function PdfSidePanel() {
     setIsLoading(true);
 
     try {
+      if (file.type.startsWith('image/')) {
+        const src = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error('image-load'));
+          img.src = src;
+        });
+
+        addPdfDocument({
+          id: 'img-doc-' + Date.now().toString(),
+          name: file.name,
+          className: driveAccessToken ? 'Google Drive' : 'Lokalne',
+          folderName: driveFolderStack[driveFolderStack.length - 1]?.name || 'Materiały',
+          pages: [{
+            pageNumber: 1,
+            src,
+            width: image.naturalWidth || image.width,
+            height: image.naturalHeight || image.height,
+            selected: true,
+            text: file.name,
+          }],
+        });
+        return;
+      }
+
       const pdfjsLib = await loadPdfJs();
       const data = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -434,7 +465,7 @@ export default function PdfSidePanel() {
         pages,
       });
     } catch {
-      alert('Nie udało się zaimportować PDF. Import wymaga jednorazowego pobrania PDF.js.');
+      alert('Nie udało się zaimportować pliku. PDF wymaga jednorazowego pobrania PDF.js.');
     } finally {
       setIsLoading(false);
     }
@@ -653,8 +684,8 @@ export default function PdfSidePanel() {
 
   return (
     <aside
-      className="fixed right-0 top-0 z-[70] flex h-dvh max-w-[calc(100vw-24px)] flex-col border-l border-slate-200 bg-white shadow-2xl"
-      style={{ width: panelWidth, transform: `scale(${uiScale})`, transformOrigin: 'top right' }}
+      className="fixed right-0 top-0 z-[70] flex max-w-[calc(100vw-24px)] flex-col border-l border-slate-200 bg-white shadow-2xl"
+      style={{ width: panelWidth, height: `calc(100dvh / ${uiScale})`, transform: `scale(${uiScale})`, transformOrigin: 'top right' }}
     >
       <button
         type="button"
@@ -801,7 +832,7 @@ export default function PdfSidePanel() {
           <input
             ref={panelFileInputRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,image/*"
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];

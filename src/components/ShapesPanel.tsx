@@ -194,8 +194,8 @@ export default function ShapesPanel() {
   return (
     <>
     <div
-      className="absolute right-0 top-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-100 z-50 flex flex-col animate-in slide-in-from-right duration-300"
-      style={{ transform: `scale(${uiScale})`, transformOrigin: 'top right' }}
+      className="absolute right-0 top-0 w-[340px] bg-white shadow-2xl border-l border-gray-100 z-50 flex flex-col animate-in slide-in-from-right duration-300"
+      style={{ height: `calc(100dvh / ${uiScale})`, transform: `scale(${uiScale})`, transformOrigin: 'top right' }}
     >
       <div className="p-4 flex justify-between items-center border-b border-gray-50">
         <h2 className="font-bold text-gray-800 text-lg">Biblioteka figur</h2>

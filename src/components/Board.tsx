@@ -634,7 +634,7 @@ export default function Board() {
           points: [pos.x, pos.y],
           stroke: isHighlight ? '#facc15' : strokeColor,
           strokeWidth: isHighlight ? Math.max(14, strokeWidth * 4) : strokeWidth,
-          opacity: isHighlight ? Math.min(0.7, Math.max(0.15, strokeOpacity)) : strokeOpacity,
+          opacity: isHighlight ? Math.min(0.32, Math.max(0.1, strokeOpacity * 0.32)) : strokeOpacity,
           dash,
         }]);
       }

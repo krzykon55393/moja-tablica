@@ -18,7 +18,7 @@ export default function MenuPanel() {
     uiScale, setUiScale,
   } = useBoardStore();
   
-  const [activeTab, setActiveTab] = useState<ActiveTab>('menu');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(null);
   const colors = ['#ffffff', '#f8f9fa', '#f1f3f5', '#fff9db', '#fff0f6', '#e0e7ff'];
   const strokeColors = ['#1f1f1f', '#8c949f', '#c7cdd6', '#ffffff', '#ef2f32', '#ff6468', '#f59100', '#ffb000', '#ffc022', '#91df22', '#2ca247', '#4bc75f', '#0e7f8f', '#2bb4c6', '#3898e8', '#2382d5', '#4c66ed', '#a435bf', '#c655df', '#ec5b94'];
   const emitExport = (type: 'png' | 'pdf') => window.dispatchEvent(new Event(`board:export-${type}`));
@@ -27,7 +27,7 @@ export default function MenuPanel() {
   };
   const changeUiScale = useCallback((direction: -1 | 1) => {
     const nextScale = Math.round((uiScale + direction * 0.1) * 10) / 10;
-    setUiScale(Math.min(1.4, Math.max(0.65, nextScale)));
+    setUiScale(Math.min(1.4, Math.max(0.6, nextScale)));
   }, [setUiScale, uiScale]);
 
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function MenuPanel() {
               <button
                 onClick={() => changeUiScale(-1)}
                 className="rounded-md p-1.5 text-gray-600 transition-all hover:bg-gray-200 disabled:opacity-40"
-                disabled={uiScale <= 0.65}
+                disabled={uiScale <= 0.6}
                 title="Zmniejsz interfejs"
               >
                 <Minus size={16} />
