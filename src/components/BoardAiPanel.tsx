@@ -10,7 +10,9 @@ const getBoardAiUrl = () => {
   const normalizedApi = window.location.protocol === 'https:' && api.includes('koreporeczki.cba.pl')
     ? 'https://core-czki.pl/uczen/board_api.php'
     : window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
-  return normalizedApi.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
+  const url = new URL(normalizedApi, window.location.href);
+  url.searchParams.set('action', 'ai_solve');
+  return url.toString();
 };
 
 const summarizeBoard = (board: BoardSaveData) => {
@@ -31,6 +33,7 @@ export default function BoardAiPanel() {
   const aiCapture = useBoardStore((state) => state.aiCapture);
   const setAiCapture = useBoardStore((state) => state.setAiCapture);
   const [answer, setAnswer] = useState('');
+  const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [size, setSize] = useState({ width: 350, height: 430 });
   const [pos, setPos] = useState({ x: 20, y: 96 });
@@ -46,7 +49,7 @@ export default function BoardAiPanel() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mode: 'solve',
+          prompt,
           context: boardContext,
           image: aiCapture?.dataUrl || '',
         }),
@@ -54,7 +57,7 @@ export default function BoardAiPanel() {
       const data = await response.json();
       setAnswer(data.status === 'success' ? data.answer : (data.message || 'Nie udało się uzyskać odpowiedzi AI.'));
     } catch {
-      setAnswer('Nie udało się połączyć z AI. Sprawdź, czy na serwerze jest aktualny plik /uczen/board_ai.php oraz czy w Vercel NEXT_PUBLIC_BOARD_API_URL wskazuje https://core-czki.pl/uczen/board_api.php.');
+      setAnswer('Nie udało się połączyć z AI. Sprawdź, czy na serwerze jest aktualny plik /uczen/board_api.php z akcją ai_solve.');
     } finally {
       setIsLoading(false);
     }
@@ -129,9 +132,16 @@ export default function BoardAiPanel() {
             )}
           </button>
 
+          <textarea
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder="Krótki prompt, np. policz, wyjaśnij dla 5 klasy, pokaż najkrótszy sposób..."
+            className="mb-3 min-h-20 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-4 focus:ring-violet-100"
+          />
+
           <button
             onClick={askAi}
-            disabled={isLoading || !aiCapture}
+            disabled={isLoading || (!aiCapture && prompt.trim() === '')}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-black text-white transition hover:bg-violet-700 disabled:opacity-60"
           >
             {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
