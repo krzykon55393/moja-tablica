@@ -4,7 +4,7 @@ import { useBoardStore, Tool } from '../store/useBoardStore';
 import { useRef } from 'react';
 import { 
   MousePointer2, Hand, Shapes, 
-  Type, Image as ImageIcon, Eraser, FileText, Minus, Plus, Undo2, Redo2, Wand2
+  Type, Image as ImageIcon, Eraser, FileText, Minus, Plus, Undo2, Redo2, Wand2, Highlighter, Bot
 } from 'lucide-react';
 
 export default function Toolbar() {
@@ -81,6 +81,8 @@ export default function Toolbar() {
     { id: 'select', icon: MousePointer2, name: 'Wybierz' },
     { id: 'pan', icon: Hand, name: 'Rączka' },
     { id: 'draw', icon: Wand2, name: 'Wskaźnik / rysuj' },
+    { id: 'highlight', icon: Highlighter, name: 'Zakreślacz' },
+    { id: 'ai', icon: Bot, name: 'AI: zaznacz i wyjaśnij' },
     { id: 'shape', icon: Shapes, name: 'Figury' },
     { id: 'text', icon: Type, name: 'Tekst' },
     { id: 'image', icon: ImageIcon, name: 'Obraz' },

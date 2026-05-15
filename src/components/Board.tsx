@@ -587,7 +587,7 @@ export default function Board() {
     // Kliknięcie w pustą tablicę odznacza figury
     if (clickedOnBoard) {
       setSelectedId(null);
-      if (activeTool !== 'draw' && activeTool !== 'pan') return;
+      if (activeTool !== 'draw' && activeTool !== 'highlight' && activeTool !== 'pan') return;
     }
 
     if (activeTool === 'erase') {
@@ -599,18 +599,26 @@ export default function Board() {
       return;
     }
 
-    if (activeTool === 'draw') {
+    if (activeTool === 'draw' || activeTool === 'highlight') {
       isDrawing.current = true;
       if (pos) {
         const newId = 'line-' + Date.now();
-        const dash = strokeDash === 'dash' ? [18, 12] : strokeDash === 'dot' ? [2, 10] : undefined;
+        const isHighlight = activeTool === 'highlight';
+        const dash = !isHighlight && strokeDash === 'dash' ? [18, 12] : !isHighlight && strokeDash === 'dot' ? [2, 10] : undefined;
         drawingLineId.current = newId;
         rawDrawingPoints.current = [pos.x, pos.y];
         drawingStartPoint.current = pos;
         lastDrawingPoint.current = pos;
         smartDrawing.current = false;
-        scheduleSmartDrawing();
-        setLines((prev: any) => [...prev, { id: newId, points: [pos.x, pos.y], stroke: strokeColor, strokeWidth, dash }]);
+        if (!isHighlight) scheduleSmartDrawing();
+        setLines((prev: any) => [...prev, {
+          id: newId,
+          points: [pos.x, pos.y],
+          stroke: isHighlight ? '#facc15' : strokeColor,
+          strokeWidth: isHighlight ? Math.max(14, strokeWidth * 4) : strokeWidth,
+          opacity: isHighlight ? 0.38 : 1,
+          dash,
+        }]);
       }
     }
   };
@@ -635,11 +643,11 @@ export default function Board() {
       }
       return;
     }
-    if (!isDrawing.current || activeTool !== 'draw') return;
+    if (!isDrawing.current || (activeTool !== 'draw' && activeTool !== 'highlight')) return;
 
     if (!pos) return;
 
-    if (!smartDrawing.current && lastDrawingPoint.current) {
+    if (activeTool !== 'highlight' && !smartDrawing.current && lastDrawingPoint.current) {
       const distanceFromLastPoint = getPointDistance(lastDrawingPoint.current.x, lastDrawingPoint.current.y, pos.x, pos.y);
       if (distanceFromLastPoint > 3) {
         lastDrawingPoint.current = pos;
@@ -653,7 +661,7 @@ export default function Board() {
       const newLines = [...prev];
       const lastLine = { ...newLines[newLines.length - 1] };
       const rawPoints = rawDrawingPoints.current;
-      lastLine.points = smartDrawing.current ? idealizeDrawing(rawPoints) : rawPoints;
+      lastLine.points = activeTool !== 'highlight' && smartDrawing.current ? idealizeDrawing(rawPoints) : rawPoints;
       newLines[newLines.length - 1] = lastLine;
       return newLines;
     }, { record: false });
@@ -664,7 +672,7 @@ export default function Board() {
       window.clearTimeout(smartDrawingTimer.current);
       smartDrawingTimer.current = null;
     }
-    if (smartDrawing.current && isDrawing.current && drawingLineId.current && rawDrawingPoints.current.length >= 4) {
+    if (activeTool !== 'highlight' && smartDrawing.current && isDrawing.current && drawingLineId.current && rawDrawingPoints.current.length >= 4) {
       const lineId = drawingLineId.current;
       const finalPoints = idealizeDrawing(rawDrawingPoints.current);
       setLines((prev: any) => prev.map((line: any) => (
@@ -1154,6 +1162,7 @@ export default function Board() {
               stroke={line.stroke || "#1e1e1e"}
               strokeWidth={line.strokeWidth || 3}
               dash={line.dash}
+              opacity={line.opacity ?? 1}
               tension={0}
               lineCap="round"
               lineJoin="round"

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
-export type Tool = 'select' | 'pan' | 'draw' | 'erase' | 'shape' | 'text' | 'image';
-export type LineData = { id: string; points: number[]; stroke?: string; strokeWidth?: number; dash?: number[] };
+export type Tool = 'select' | 'pan' | 'draw' | 'highlight' | 'ai' | 'erase' | 'shape' | 'text' | 'image';
+export type LineData = { id: string; points: number[]; stroke?: string; strokeWidth?: number; dash?: number[]; opacity?: number };
 export type TextData = { id: string; x: number; y: number; text: string; fontSize: number; width: number; rotation?: number; fill?: string };
 export type ImageCrop = { x: number; y: number; width: number; height: number };
 export type ImageData = {
