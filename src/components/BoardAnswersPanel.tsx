@@ -6,8 +6,9 @@ import { useBoardStore } from '../store/useBoardStore';
 
 const getBoardAiUrl = () => {
   const params = new URLSearchParams(window.location.search);
-  const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'http://localhost/GUWNO/koreczki/moja-tablica/koreporeczki.cba.pl/uczen/board_api.php';
-  return api.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
+  const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
+  const normalizedApi = window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
+  return normalizedApi.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
 };
 
 const getRoom = () => {
@@ -32,9 +33,9 @@ export default function BoardAnswersPanel() {
       url.searchParams.set('room', getRoom());
       const response = await fetch(url.toString(), { credentials: 'include' });
       const data = await response.json();
-      setAnswer(data.status === 'success' ? (data.answers || 'Brak wygenerowanych odpowiedzi do testu.') : (data.message || 'Nie udało się wczytać odpowiedzi.'));
+      setAnswer(data.status === 'success' ? (data.answers || 'Brak wygenerowanych odpowiedzi do zadania domowego/testu.') : (data.message || 'Nie udało się wczytać odpowiedzi.'));
     } catch {
-      setAnswer('Nie udało się połączyć z odpowiedziami. Wgraj aktualny board_ai.php na serwer.');
+      setAnswer('Nie udało się połączyć z odpowiedziami. Wgraj aktualny board_ai.php do folderu /uczen i upewnij się, że API działa po HTTPS.');
     } finally {
       setLoading(false);
     }
@@ -83,7 +84,7 @@ export default function BoardAnswersPanel() {
           <div className="flex items-center gap-2 text-sm font-black text-amber-900">
             <Move size={16} className="text-amber-500" />
             <KeyRound size={18} />
-            Odpowiedzi
+            Odpowiedzi do zadania
           </div>
           <div className="flex items-center gap-1">
             <button className="rounded-lg p-1.5 hover:bg-amber-100" onClick={loadAnswers} title="Odśwież odpowiedzi">

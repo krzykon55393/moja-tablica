@@ -85,6 +85,8 @@ interface BoardState {
   setCursorPosition: (pos: { x: number; y: number } | null) => void;
   aiCapture: AiCapture | null;
   setAiCapture: (capture: AiCapture | null) => void;
+  isAiPanelOpen: boolean;
+  setIsAiPanelOpen: (open: boolean) => void;
   pendingPlacementImage: PendingPlacementImage | null;
   setPendingPlacementImage: (image: PendingPlacementImage | null) => void;
   isPdfPanelOpen: boolean;
@@ -172,6 +174,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setCursorPosition: (cursorPosition) => set({ cursorPosition }),
   aiCapture: null,
   setAiCapture: (aiCapture) => set({ aiCapture }),
+  isAiPanelOpen: false,
+  setIsAiPanelOpen: (isAiPanelOpen) => set({ isAiPanelOpen }),
   pendingPlacementImage: null,
   setPendingPlacementImage: (pendingPlacementImage) => set({ pendingPlacementImage }),
   isPdfPanelOpen: false,

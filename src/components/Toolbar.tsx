@@ -11,7 +11,7 @@ export default function Toolbar() {
   const {
     activeTool, setActiveTool, setShapesPanelOpen,
     addImage, stagePos, stageScale, setStageScale, cursorPosition,
-    isPdfPanelOpen, setIsPdfPanelOpen, isAnswersPanelOpen, setIsAnswersPanelOpen, uiScale,
+    isPdfPanelOpen, setIsPdfPanelOpen, isAiPanelOpen, setIsAiPanelOpen, isAnswersPanelOpen, setIsAnswersPanelOpen, uiScale,
     canUndo, canRedo, undo, redo
   } = useBoardStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -25,6 +25,13 @@ export default function Toolbar() {
     }
     
     setActiveTool(toolId);
+    if (toolId === 'ai') {
+      setIsAiPanelOpen(true);
+      setShapesPanelOpen(false);
+      setIsPdfPanelOpen(false);
+      return;
+    }
+
     if (toolId === 'shape') {
       setShapesPanelOpen(true);
       return;
@@ -128,7 +135,7 @@ export default function Toolbar() {
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
           {tools.map((t) => {
             const Icon = t.icon;
-            const isActive = activeTool === t.id;
+            const isActive = t.id === 'ai' ? isAiPanelOpen : activeTool === t.id;
             return (
               <button
                 key={t.id}

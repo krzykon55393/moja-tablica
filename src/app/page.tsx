@@ -24,7 +24,8 @@ const getBoardRoute = (): BoardRoute => {
   const params = new URLSearchParams(window.location.search);
   const room = cleanRoom(params.get('room'));
   const lesson = cleanLesson(params.get('lesson'));
-  const apiUrl = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'http://localhost/GUWNO/koreczki/moja-tablica/koreporeczki.cba.pl/uczen/board_api.php';
+  const rawApiUrl = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
+  const apiUrl = window.location.protocol === 'https:' && rawApiUrl.startsWith('http://') ? rawApiUrl.replace(/^http:\/\//, 'https://') : rawApiUrl;
   return {
     room,
     lesson,

@@ -6,8 +6,9 @@ import { BoardSaveData, useBoardStore } from '../store/useBoardStore';
 
 const getBoardAiUrl = () => {
   const params = new URLSearchParams(window.location.search);
-  const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'http://localhost/GUWNO/koreczki/moja-tablica/koreporeczki.cba.pl/uczen/board_api.php';
-  return api.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
+  const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
+  const normalizedApi = window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
+  return normalizedApi.replace(/board_api\.php(?:$|\?)/, 'board_ai.php');
 };
 
 const summarizeBoard = (board: BoardSaveData) => {
@@ -21,6 +22,8 @@ const summarizeBoard = (board: BoardSaveData) => {
 export default function BoardAiPanel() {
   const activeTool = useBoardStore((state) => state.activeTool);
   const setActiveTool = useBoardStore((state) => state.setActiveTool);
+  const isOpen = useBoardStore((state) => state.isAiPanelOpen);
+  const setIsOpen = useBoardStore((state) => state.setIsAiPanelOpen);
   const exportBoard = useBoardStore((state) => state.exportBoard);
   const uiScale = useBoardStore((state) => state.uiScale);
   const aiCapture = useBoardStore((state) => state.aiCapture);
@@ -30,10 +33,9 @@ export default function BoardAiPanel() {
   const [size, setSize] = useState({ width: 350, height: 430 });
   const [pos, setPos] = useState({ x: 20, y: 96 });
 
-  const visible = activeTool === 'ai';
-  const boardContext = useMemo(() => visible ? summarizeBoard(exportBoard()) : '', [exportBoard, visible]);
+  const boardContext = useMemo(() => isOpen ? summarizeBoard(exportBoard()) : '', [exportBoard, isOpen]);
 
-  if (!visible) return null;
+  if (!isOpen) return null;
 
   const askAi = async (mode: 'calculate' | 'solve' | 'explain') => {
     setLoadingMode(mode);
@@ -51,7 +53,7 @@ export default function BoardAiPanel() {
       const data = await response.json();
       setAnswer(data.status === 'success' ? data.answer : (data.message || 'Nie udało się uzyskać odpowiedzi AI.'));
     } catch {
-      setAnswer('Nie udało się połączyć z AI. Wgraj plik board_ai.php na serwer i sprawdź NEXT_PUBLIC_BOARD_API_URL.');
+      setAnswer('Nie udało się połączyć z AI. Sprawdź, czy board_ai.php jest wgrany do folderu /uczen i czy link API działa po HTTPS.');
     } finally {
       setLoadingMode(null);
     }
@@ -97,7 +99,14 @@ export default function BoardAiPanel() {
             <Bot size={18} className="text-violet-600" />
             AI
           </div>
-          <button className="rounded-lg p-1.5 hover:bg-slate-200" onClick={() => setActiveTool('select')} title="Zamknij AI">
+          <button
+            className="rounded-lg p-1.5 hover:bg-slate-200"
+            onClick={() => {
+              setIsOpen(false);
+              if (activeTool === 'ai') setActiveTool('select');
+            }}
+            title="Zamknij AI"
+          >
             <X size={18} />
           </button>
         </div>
