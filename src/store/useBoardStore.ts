@@ -38,6 +38,11 @@ export type PendingPlacementImage = {
   naturalWidth: number;
   naturalHeight: number;
 };
+export type AiCapture = {
+  dataUrl: string;
+  width: number;
+  height: number;
+};
 
 // Pełna lista figur dokładnie z Twojego oryginału (obraz_15.png)
 export type ShapeType = 
@@ -78,6 +83,8 @@ interface BoardState {
   setUiScale: (scale: number) => void;
   cursorPosition: { x: number; y: number } | null;
   setCursorPosition: (pos: { x: number; y: number } | null) => void;
+  aiCapture: AiCapture | null;
+  setAiCapture: (capture: AiCapture | null) => void;
   pendingPlacementImage: PendingPlacementImage | null;
   setPendingPlacementImage: (image: PendingPlacementImage | null) => void;
   isPdfPanelOpen: boolean;
@@ -161,6 +168,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setUiScale: (scale) => set({ uiScale: scale }),
   cursorPosition: null,
   setCursorPosition: (cursorPosition) => set({ cursorPosition }),
+  aiCapture: null,
+  setAiCapture: (aiCapture) => set({ aiCapture }),
   pendingPlacementImage: null,
   setPendingPlacementImage: (pendingPlacementImage) => set({ pendingPlacementImage }),
   isPdfPanelOpen: false,

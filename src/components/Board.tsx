@@ -76,6 +76,13 @@ type TextEditorState = {
   fontSize: number;
 };
 
+type AiSelectionRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export default function Board() {
   const {
     activeTool, bgColor, lines, setLines, grid, dots, theme,
@@ -83,7 +90,7 @@ export default function Board() {
     strokeColor, strokeWidth, strokeOpacity, strokeDash,
     pendingPlacementImage, setPendingPlacementImage,
     addImage, updateImage, updateShape, addText, updateText, selectedId, setSelectedId, setCursorPosition,
-    uiScale, deleteSelected, undo, redo
+    setAiCapture, uiScale, deleteSelected, undo, redo
   } = useBoardStore();
 
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
@@ -91,6 +98,7 @@ export default function Board() {
   const [cropImageId, setCropImageId] = useState<string | null>(null);
   const [exportPatternBounds, setExportPatternBounds] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
+  const [aiSelectionRect, setAiSelectionRect] = useState<AiSelectionRect | null>(null);
   const isDrawing = useRef(false);
   const trRef = useRef<any>(null);
   const cropTrRef = useRef<any>(null);
@@ -107,6 +115,7 @@ export default function Board() {
   const drawingStartPoint = useRef<{ x: number; y: number } | null>(null);
   const lastDrawingPoint = useRef<{ x: number; y: number } | null>(null);
   const eraseHistoryRecorded = useRef(false);
+  const aiSelectionStart = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -573,6 +582,14 @@ export default function Board() {
 
     const clickedOnBoard = clickedOn === stage || clickedOn.name?.() === 'board-background';
 
+    if (activeTool === 'ai' && pos) {
+      setSelectedId(null);
+      aiSelectionStart.current = pos;
+      setAiSelectionRect({ x: pos.x, y: pos.y, width: 0, height: 0 });
+      setAiCapture(null);
+      return;
+    }
+
     if (activeTool === 'text' && pos && clickedOn.getClassName?.() !== 'Text') {
       openTextEditor({
         x: pos.x,
@@ -631,6 +648,17 @@ export default function Board() {
     const pos = getRelativePointerPosition(e.target.getStage());
     if (pos) setCursorPosition(pos);
 
+    if (activeTool === 'ai' && aiSelectionStart.current && pos) {
+      const start = aiSelectionStart.current;
+      setAiSelectionRect({
+        x: Math.min(start.x, pos.x),
+        y: Math.min(start.y, pos.y),
+        width: Math.abs(pos.x - start.x),
+        height: Math.abs(pos.y - start.y),
+      });
+      return;
+    }
+
     if (activeTool === 'pan') return;
     if (activeTool === 'erase' && e.evt.buttons === 1) {
       const hoveredOn = e.target;
@@ -668,6 +696,56 @@ export default function Board() {
   };
 
   const handlePointerUp = () => {
+    if (activeTool === 'ai' && aiSelectionStart.current) {
+      const rect = aiSelectionRect;
+      aiSelectionStart.current = null;
+      flushSync(() => setAiSelectionRect(null));
+
+      if (rect && rect.width > 12 && rect.height > 12 && stageRef.current) {
+        const stage = stageRef.current;
+        const hiddenNodes = [trRef.current, cropTrRef.current, cropRectRef.current].filter(Boolean);
+        const previousScale = { x: stage.scaleX(), y: stage.scaleY() };
+        const previousPosition = { x: stage.x(), y: stage.y() };
+        const previousSize = { width: stage.width(), height: stage.height() };
+        const backgroundNode = stage.findOne('.board-background');
+        const previousBackground = backgroundNode ? {
+          x: backgroundNode.x(),
+          y: backgroundNode.y(),
+          width: backgroundNode.width(),
+          height: backgroundNode.height(),
+        } : null;
+
+        hiddenNodes.forEach((node: any) => node.visible(false));
+        stage.scale({ x: 1, y: 1 });
+        stage.position({ x: -rect.x, y: -rect.y });
+        stage.size({ width: Math.ceil(rect.width), height: Math.ceil(rect.height) });
+        if (backgroundNode) {
+          backgroundNode.position({ x: rect.x, y: rect.y });
+          backgroundNode.size({ width: Math.ceil(rect.width), height: Math.ceil(rect.height) });
+        }
+        stage.batchDraw();
+        const dataUrl = stage.toDataURL({
+          mimeType: 'image/png',
+          pixelRatio: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
+          x: 0,
+          y: 0,
+          width: Math.ceil(rect.width),
+          height: Math.ceil(rect.height),
+        });
+        hiddenNodes.forEach((node: any) => node.visible(true));
+        if (backgroundNode && previousBackground) {
+          backgroundNode.position({ x: previousBackground.x, y: previousBackground.y });
+          backgroundNode.size({ width: previousBackground.width, height: previousBackground.height });
+        }
+        stage.scale(previousScale);
+        stage.position(previousPosition);
+        stage.size(previousSize);
+        stage.batchDraw();
+        setAiCapture({ dataUrl, width: rect.width, height: rect.height });
+      }
+      return;
+    }
+
     if (smartDrawingTimer.current) {
       window.clearTimeout(smartDrawingTimer.current);
       smartDrawingTimer.current = null;
@@ -980,6 +1058,14 @@ export default function Board() {
           Kliknij na tablicę i wpisz tekst. Enter zapisuje, Shift+Enter nowa linia.
         </div>
       )}
+      {activeTool === 'ai' && (
+        <div
+          className="pointer-events-none fixed left-1/2 top-20 z-[90] -translate-x-1/2 rounded-full bg-violet-700/75 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur"
+          style={{ transform: `translateX(-50%) scale(${uiScale})`, transformOrigin: 'top center' }}
+        >
+          Przeciągnij po tablicy, żeby zaznaczyć kontekst dla AI.
+        </div>
+      )}
       <Stage
         ref={stageRef}
         width={windowSize.width} height={windowSize.height} x={stagePos.x} y={stagePos.y} scaleX={stageScale} scaleY={stageScale}
@@ -1154,6 +1240,20 @@ export default function Board() {
             </>
           )}
 
+          {activeTool === 'ai' && aiSelectionRect && (
+            <Rect
+              x={aiSelectionRect.x}
+              y={aiSelectionRect.y}
+              width={aiSelectionRect.width}
+              height={aiSelectionRect.height}
+              fill="rgba(124,58,237,0.12)"
+              stroke="#7c3aed"
+              strokeWidth={2}
+              dash={[9, 7]}
+              listening={false}
+            />
+          )}
+
           {lines.map((line) => (
             <Line
               key={line.id}
@@ -1163,6 +1263,7 @@ export default function Board() {
               strokeWidth={line.strokeWidth || 3}
               dash={line.dash}
               opacity={line.opacity ?? 1}
+              globalCompositeOperation={(line.opacity ?? 1) < 1 ? 'multiply' : 'source-over'}
               tension={0}
               lineCap="round"
               lineJoin="round"
