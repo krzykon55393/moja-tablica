@@ -103,6 +103,8 @@ interface BoardState {
   setStrokeColor: (color: string) => void;
   strokeWidth: number;
   setStrokeWidth: (width: number) => void;
+  strokeOpacity: number;
+  setStrokeOpacity: (opacity: number) => void;
   strokeDash: 'solid' | 'dash' | 'dot';
   setStrokeDash: (dash: 'solid' | 'dash' | 'dot') => void;
   
@@ -197,6 +199,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setStrokeColor: (strokeColor) => set({ strokeColor }),
   strokeWidth: 3,
   setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
+  strokeOpacity: 1,
+  setStrokeOpacity: (strokeOpacity) => set({ strokeOpacity }),
   strokeDash: 'solid',
   setStrokeDash: (strokeDash) => set({ strokeDash }),
   lines: [],

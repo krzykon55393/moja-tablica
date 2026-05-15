@@ -14,7 +14,7 @@ export default function MenuPanel() {
   const { 
     bgColor, setBgColor, clearBoard, 
     grid, setGrid, dots, setDots, theme, setTheme,
-    strokeColor, setStrokeColor, strokeWidth, setStrokeWidth, strokeDash, setStrokeDash,
+    strokeColor, setStrokeColor, strokeWidth, setStrokeWidth, strokeOpacity, setStrokeOpacity, strokeDash, setStrokeDash,
     uiScale, setUiScale,
   } = useBoardStore();
   
@@ -175,14 +175,14 @@ export default function MenuPanel() {
       )}
 
       {activeTab === 'settings' && (
-        <div className="bg-white w-[360px] rounded-xl shadow-lg border border-gray-100 p-5 animate-in fade-in slide-in-from-top-2">
-          <p className="text-xs text-gray-500 font-bold tracking-wider mb-4">KRESKA</p>
-          <div className="flex gap-3 mb-7">
+        <div className="bg-white w-[min(330px,calc(100vw-32px))] max-h-[calc(100vh-112px)] overflow-y-auto rounded-xl shadow-lg border border-gray-100 p-4 animate-in fade-in slide-in-from-top-2">
+          <p className="text-[11px] text-gray-500 font-bold tracking-wider mb-3">KRESKA</p>
+          <div className="grid grid-cols-4 gap-2 mb-5">
             {[1, 3, 5, 8].map((width) => (
               <button
                 key={width}
                 onClick={() => setStrokeWidth(width)}
-                className={`w-[72px] h-[72px] rounded-2xl border-2 flex items-center justify-center ${strokeWidth === width ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                className={`h-12 rounded-xl border-2 flex items-center justify-center ${strokeWidth === width ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:bg-slate-50'}`}
                 title={`Grubość ${width}`}
               >
                 <span className="rounded-full bg-slate-900" style={{ width, height: width }} />
@@ -190,8 +190,8 @@ export default function MenuPanel() {
             ))}
           </div>
 
-          <p className="text-xs text-gray-500 font-bold tracking-wider mb-4">STYL</p>
-          <div className="flex gap-3 mb-7">
+          <p className="text-[11px] text-gray-500 font-bold tracking-wider mb-3">STYL</p>
+          <div className="grid grid-cols-3 gap-2 mb-5">
             {[
               { id: 'solid', dash: 'none' },
               { id: 'dash', dash: '12px 10px' },
@@ -200,20 +200,35 @@ export default function MenuPanel() {
               <button
                 key={item.id}
                 onClick={() => setStrokeDash(item.id as 'solid' | 'dash' | 'dot')}
-                className={`w-[92px] h-[56px] rounded-2xl border-2 flex items-center justify-center ${strokeDash === item.id ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                className={`h-12 rounded-xl border-2 flex items-center justify-center ${strokeDash === item.id ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:bg-slate-50'}`}
               >
                 <span className="w-12 border-t-[3px] border-slate-950" style={{ borderStyle: item.dash === 'none' ? 'solid' : 'dashed' }} />
               </button>
             ))}
           </div>
 
-          <p className="text-xs text-gray-500 font-bold tracking-wider mb-4">KOLOR</p>
-          <div className="grid grid-cols-5 gap-3">
+          <div className="mb-5 rounded-xl bg-slate-50 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[11px] text-gray-500 font-bold tracking-wider">KRYCIE</p>
+              <span className="text-xs font-bold text-slate-500">{Math.round(strokeOpacity * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0.15"
+              max="1"
+              step="0.05"
+              value={strokeOpacity}
+              onChange={(event) => setStrokeOpacity(Number(event.target.value))}
+            />
+          </div>
+
+          <p className="text-[11px] text-gray-500 font-bold tracking-wider mb-3">KOLOR</p>
+          <div className="grid grid-cols-5 gap-2">
             {strokeColors.map((color) => (
               <button
                 key={color}
                 onClick={() => setStrokeColor(color)}
-                className={`w-12 h-12 rounded-2xl border-2 ${strokeColor === color ? 'border-violet-500 ring-4 ring-violet-200' : 'border-slate-200'}`}
+                className={`aspect-square rounded-xl border-2 ${strokeColor === color ? 'border-violet-500 ring-4 ring-violet-200' : 'border-slate-200'}`}
                 style={{ backgroundColor: color }}
                 title={color}
               />

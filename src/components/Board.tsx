@@ -80,7 +80,7 @@ export default function Board() {
   const {
     activeTool, bgColor, lines, setLines, grid, dots, theme,
     stagePos, setStagePos, stageScale, setStageScale, images, shapes, texts,
-    strokeColor, strokeWidth, strokeDash,
+    strokeColor, strokeWidth, strokeOpacity, strokeDash,
     pendingPlacementImage, setPendingPlacementImage,
     addImage, updateImage, updateShape, addText, updateText, selectedId, setSelectedId, setCursorPosition,
     uiScale, deleteSelected, undo, redo
@@ -298,7 +298,7 @@ export default function Board() {
     if (!textEditor || !textAreaRef.current) return;
     textAreaRef.current.focus();
     textAreaRef.current.select();
-  }, [textEditor]);
+  }, [textEditor?.id, textEditor?.x, textEditor?.y]);
 
   useEffect(() => {
     const handleKeyboardShortcuts = (event: KeyboardEvent) => {
@@ -616,7 +616,7 @@ export default function Board() {
           points: [pos.x, pos.y],
           stroke: isHighlight ? '#facc15' : strokeColor,
           strokeWidth: isHighlight ? Math.max(14, strokeWidth * 4) : strokeWidth,
-          opacity: isHighlight ? 0.38 : 1,
+          opacity: isHighlight ? Math.min(0.7, Math.max(0.15, strokeOpacity)) : strokeOpacity,
           dash,
         }]);
       }
@@ -1212,11 +1212,11 @@ export default function Board() {
             }}
             className="fixed z-[140] min-h-12 resize both rounded-lg border-2 border-violet-500 bg-white px-3 py-2 leading-tight text-slate-950 shadow-2xl outline-none ring-4 ring-violet-200/70"
             style={{
-              left: position.left,
-              top: position.top,
-              width: Math.max(180, textEditor.width * stageScale),
+              left: Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220)),
+              top: Math.min(Math.max(12, position.top), Math.max(12, windowSize.height - 120)),
+              width: Math.min(Math.max(220, textEditor.width * stageScale), Math.max(220, windowSize.width - 24)),
               minWidth: 120,
-              fontSize: textEditor.fontSize * stageScale,
+              fontSize: Math.max(18, textEditor.fontSize * stageScale),
               lineHeight: 1.18,
               pointerEvents: 'auto',
             }}
