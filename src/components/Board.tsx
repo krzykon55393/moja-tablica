@@ -2,6 +2,7 @@
 
 import { Stage, Layer, Line, Image as KonvaImage, Rect, Ellipse, Transformer, Path, Arrow, Group, Circle, Text as KonvaText } from 'react-konva';
 import { ImageCrop, ImageData, useBoardStore } from '../store/useBoardStore';
+import { getShapePath } from '../lib/shapeGeometry';
 import { useEffect, useState, useRef, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import useImage from 'use-image';
@@ -992,48 +993,25 @@ export default function Board() {
   };
 
   const renderShapeContent = (shape: any, w: number, h: number) => {
-    const dash = strokeDash === 'dash' ? [18, 12] : strokeDash === 'dot' ? [2, 10] : undefined;
-    const strokeProps = { stroke: strokeColor, strokeWidth, dash, lineJoin: "round" as any, lineCap: "round" as any };
+    const shapeStroke = shape.stroke || '#1e1e1e';
+    const shapeStrokeWidth = shape.strokeWidth || 3;
+    const shapeDash = shape.dash;
+    const shapeOpacity = shape.opacity ?? 1;
+    const strokeProps = { stroke: shapeStroke, strokeWidth: shapeStrokeWidth, dash: shapeDash, opacity: shapeOpacity, lineJoin: "round" as any, lineCap: "round" as any };
 
-    if (shape.type === 'vector') return <Arrow points={[0, 0, w, h]} fill={strokeColor} pointerLength={15} pointerWidth={15} {...strokeProps} />;
+    if (shape.type === 'vector') return <Arrow points={[0, 0, w, h]} fill={shapeStroke} pointerLength={15} pointerWidth={15} {...strokeProps} />;
     if (shape.type === 'line_seg') return <Line points={[0, 0, w, h]} {...strokeProps} />;
     if (shape.type === 'coords') return (
       <>
-        <Arrow points={[0, h/2, w, h/2]} fill={strokeColor} pointerLength={12} pointerWidth={12} {...strokeProps} />
-        <Arrow points={[w/2, h, w/2, 0]} fill={strokeColor} pointerLength={12} pointerWidth={12} {...strokeProps} />
+        <Arrow points={[0, h/2, w, h/2]} fill={shapeStroke} pointerLength={12} pointerWidth={12} {...strokeProps} />
+        <Arrow points={[w/2, h, w/2, 0]} fill={shapeStroke} pointerLength={12} pointerWidth={12} {...strokeProps} />
       </>
     );
 
     if (shape.type === 'rect') return <Rect width={w} height={h} {...strokeProps} />;
     if (shape.type === 'ellipse') return <Ellipse x={w/2} y={h/2} radiusX={w/2} radiusY={h/2} {...strokeProps} />;
     
-    let d = "";
-    if (shape.type === 'rhombus') d = `M ${w/2} 0 L ${w} ${h/2} L ${w/2} ${h} L 0 ${h/2} Z`;
-    else if (shape.type === 'triangle') d = `M ${w/2} 0 L ${w} ${h} L 0 ${h} Z`;
-    else if (shape.type === 'rtriangle') d = `M 0 0 L 0 ${h} L ${w} ${h} Z`;
-    else if (shape.type === 'trapezoid') d = `M ${w*0.34} 0 L ${w*0.66} 0 L ${w} ${h} L 0 ${h} Z`;
-    else if (shape.type === 'rtrapezoid') d = `M 0 0 L ${w*0.62} 0 L ${w} ${h} L 0 ${h} Z`;
-    else if (shape.type === 'hexagon') d = `M ${w*0.25} 0 L ${w*0.75} 0 L ${w} ${h/2} L ${w*0.75} ${h} L ${w*0.25} ${h} L 0 ${h/2} Z`;
-    else if (shape.type === 'pentagon') d = `M ${w/2} 0 L ${w} ${h*0.4} L ${w*0.8} ${h} L ${w*0.2} ${h} L 0 ${h*0.4} Z`;
-    else if (shape.type === 'table') {
-      const rows = shape.rows || 3;
-      const cols = shape.cols || 3;
-      d = `M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`;
-      for (let row = 1; row < rows; row += 1) d += ` M 0 ${(h / rows) * row} L ${w} ${(h / rows) * row}`;
-      for (let col = 1; col < cols; col += 1) d += ` M ${(w / cols) * col} 0 L ${(w / cols) * col} ${h}`;
-    }
-    
-    else if (shape.type === 'cube') d = `M 0 ${h*0.3} L ${w*0.7} ${h*0.3} L ${w*0.7} ${h} L 0 ${h} Z M ${w*0.3} 0 L ${w} 0 L ${w} ${h*0.7} L ${w*0.3} ${h*0.7} Z M 0 ${h*0.3} L ${w*0.3} 0 M ${w*0.7} ${h*0.3} L ${w} 0 M ${w*0.7} ${h} L ${w} ${h*0.7} M 0 ${h} L ${w*0.3} ${h*0.7}`;
-    else if (shape.type === 'prism3') d = `M 0 ${h} L ${w*0.7} ${h} L ${w*0.35} ${h*0.7} Z M 0 ${h*0.3} L ${w*0.7} ${h*0.3} L ${w*0.35} 0 Z M 0 ${h*0.3} L 0 ${h} M ${w*0.7} ${h*0.3} L ${w*0.7} ${h} M ${w*0.35} 0 L ${w*0.35} ${h*0.7}`;
-    else if (shape.type === 'prism6') d = `M ${w*0.2} ${h*0.1} L ${w*0.8} ${h*0.1} L ${w} ${h*0.2} L ${w*0.8} ${h*0.3} L ${w*0.2} ${h*0.3} L 0 ${h*0.2} Z M ${w*0.2} ${h*0.8} L ${w*0.8} ${h*0.8} L ${w} ${h*0.9} L ${w*0.8} ${h} L ${w*0.2} ${h} L 0 ${h*0.9} Z M ${w*0.2} ${h*0.1} L ${w*0.2} ${h*0.8} M ${w*0.8} ${h*0.1} L ${w*0.8} ${h*0.8} M ${w} ${h*0.2} L ${w} ${h*0.9} M 0 ${h*0.2} L 0 ${h*0.9} M ${w*0.8} ${h*0.3} L ${w*0.8} ${h} M ${w*0.2} ${h*0.3} L ${w*0.2} ${h}`;
-    
-    else if (shape.type === 'pyr4') d = `M 0 ${h*0.8} L ${w*0.7} ${h*0.8} L ${w} ${h} L ${w*0.3} ${h} Z M 0 ${h*0.8} L ${w*0.5} 0 M ${w*0.7} ${h*0.8} L ${w*0.5} 0 M ${w} ${h} L ${w*0.5} 0 M ${w*0.3} ${h} L ${w*0.5} 0`;
-    else if (shape.type === 'pyr3') d = `M 0 ${h*0.9} L ${w*0.8} ${h*0.8} L ${w} ${h} Z M 0 ${h*0.9} L ${w*0.5} 0 M ${w*0.8} ${h*0.8} L ${w*0.5} 0 M ${w} ${h} L ${w*0.5} 0`;
-    else if (shape.type === 'pyr6') d = `M ${w*0.2} ${h*0.8} L ${w*0.8} ${h*0.8} L ${w} ${h*0.9} L ${w*0.8} ${h} L ${w*0.2} ${h} L 0 ${h*0.9} Z M ${w*0.2} ${h*0.8} L ${w*0.5} 0 M ${w*0.8} ${h*0.8} L ${w*0.5} 0 M ${w} ${h*0.9} L ${w*0.5} 0 M ${w*0.8} ${h} L ${w*0.5} 0 M ${w*0.2} ${h} L ${w*0.5} 0 M 0 ${h*0.9} L ${w*0.5} 0`;
-    
-    else if (shape.type === 'cone') d = `M 0 ${h*0.9} A ${w/2} ${h*0.1} 0 1 0 ${w} ${h*0.9} A ${w/2} ${h*0.1} 0 1 0 0 ${h*0.9} M 0 ${h*0.9} L ${w/2} 0 L ${w} ${h*0.9}`;
-    else if (shape.type === 'cylinder') d = `M 0 ${h*0.1} A ${w/2} ${h*0.1} 0 1 0 ${w} ${h*0.1} A ${w/2} ${h*0.1} 0 1 0 0 ${h*0.1} M 0 ${h*0.1} L 0 ${h*0.9} A ${w/2} ${h*0.1} 0 1 0 ${w} ${h*0.9} L ${w} ${h*0.1} M 0 ${h*0.9} A ${w/2} ${h*0.1} 0 1 1 ${w} ${h*0.9}`;
-    else if (shape.type === 'sphere') d = `M 0 ${h/2} A ${w/2} ${h/2} 0 1 0 ${w} ${h/2} A ${w/2} ${h/2} 0 1 0 0 ${h/2} M 0 ${h/2} A ${w/2} ${h*0.15} 0 1 0 ${w} ${h/2} A ${w/2} ${h*0.15} 0 1 0 0 ${h/2}`;
+    const d = getShapePath(shape.type, w, h, shape.rows || 3, shape.cols || 3);
 
     if (d) return <Path data={d} {...strokeProps} />;
     return null;

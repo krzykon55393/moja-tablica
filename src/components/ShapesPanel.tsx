@@ -7,10 +7,14 @@ import {
   ArrowRight, Move, Minus, X, Database, TableProperties,
   Box, Cone, Cylinder, Globe
 } from 'lucide-react';
+import { getShapePath } from '../lib/shapeGeometry';
 
 export default function ShapesPanel() {
   // DODANE: wyciągamy setActiveTool ze store'a
-  const { isShapesPanelOpen, setShapesPanelOpen, addShape, stagePos, stageScale, setActiveTool, uiScale } = useBoardStore();
+  const {
+    isShapesPanelOpen, setShapesPanelOpen, addShape, stagePos, stageScale, setActiveTool, uiScale,
+    strokeColor, strokeWidth, strokeOpacity, strokeDash,
+  } = useBoardStore();
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [rows, setRows] = useState(3);
   const [cols, setCols] = useState(3);
@@ -45,7 +49,11 @@ export default function ShapesPanel() {
       x: centerX - width / 2,
       y: centerY - height / 2,
       width: width,
-      height: height
+      height: height,
+      stroke: strokeColor,
+      strokeWidth,
+      opacity: strokeOpacity,
+      dash: strokeDash === 'dash' ? [18, 12] : strokeDash === 'dot' ? [2, 10] : undefined,
     });
   };
 
@@ -65,6 +73,10 @@ export default function ShapesPanel() {
       height,
       rows: Math.min(20, Math.max(1, rows)),
       cols: Math.min(20, Math.max(1, cols)),
+      stroke: strokeColor,
+      strokeWidth,
+      opacity: strokeOpacity,
+      dash: strokeDash === 'dash' ? [18, 12] : strokeDash === 'dot' ? [2, 10] : undefined,
     });
     setIsTableModalOpen(false);
   };
@@ -119,6 +131,66 @@ export default function ShapesPanel() {
     }
   ];
 
+  const ShapePreview = ({ type, rotate }: { type: string; rotate?: number }) => {
+    const commonProps = {
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 5,
+      strokeLinecap: 'round' as const,
+      strokeLinejoin: 'round' as const,
+    };
+
+    if (type === 'vector') {
+      return (
+        <svg viewBox="0 0 64 64" className="h-8 w-8" style={rotate ? { transform: `rotate(${rotate}deg)` } : undefined}>
+          <path d="M12 44 L48 16" {...commonProps} />
+          <path d="M39 15 L49 15 L49 25" {...commonProps} />
+        </svg>
+      );
+    }
+    if (type === 'coords') {
+      return (
+        <svg viewBox="0 0 64 64" className="h-8 w-8">
+          <path d="M10 42 H54 M48 36 L54 42 L48 48 M30 54 V10 M24 16 L30 10 L36 16" {...commonProps} />
+        </svg>
+      );
+    }
+    if (type === 'line_seg') {
+      return (
+        <svg viewBox="0 0 64 64" className="h-8 w-8">
+          <path d="M12 32 H52" {...commonProps} />
+        </svg>
+      );
+    }
+    if (type === 'rect') {
+      return (
+        <svg viewBox="0 0 64 64" className="h-8 w-8">
+          <rect x="12" y="16" width="40" height="32" rx="2" {...commonProps} />
+        </svg>
+      );
+    }
+    if (type === 'ellipse') {
+      return (
+        <svg viewBox="0 0 64 64" className="h-8 w-8">
+          <ellipse cx="32" cy="32" rx="22" ry="16" {...commonProps} />
+        </svg>
+      );
+    }
+
+    const path = getShapePath(type as ShapeType, 56, 48, 3, 3);
+    if (path) {
+      return (
+        <svg viewBox="-2 -2 60 52" className="h-8 w-8" style={rotate ? { transform: `rotate(${rotate}deg)` } : undefined}>
+          <path d={path} {...commonProps} />
+        </svg>
+      );
+    }
+
+    const fallbackMap: Record<string, any> = { Square, Circle, Triangle, Hexagon, Pentagon, Database, TableProperties, Box, Cone, Cylinder, Globe };
+    const Icon = fallbackMap[type] || Square;
+    return <Icon size={30} strokeWidth={1.8} style={rotate ? { transform: `rotate(${rotate}deg)` } : undefined} />;
+  };
+
   return (
     <>
     <div
@@ -139,7 +211,6 @@ export default function ShapesPanel() {
             </h3>
             <div className="grid grid-cols-3 gap-y-6 gap-x-2">
               {section.items.map((item) => {
-                const Icon = item.icon;
                 return (
                   <button 
                     key={item.id} 
@@ -147,7 +218,7 @@ export default function ShapesPanel() {
                     className="flex flex-col items-center gap-2 group"
                   >
                     <div className="w-14 h-14 flex items-center justify-center rounded-xl border-2 border-transparent group-hover:border-sky-100 group-hover:bg-sky-50 transition-all text-gray-800">
-                      <Icon size={28} strokeWidth={1.5} style={item.rotate ? { transform: `rotate(${item.rotate}deg)` } : {}} />
+                      <ShapePreview type={item.id} rotate={item.rotate} />
                     </div>
                     <span className="text-[11px] text-center text-gray-600 group-hover:text-gray-900 leading-tight px-1">
                       {item.label}

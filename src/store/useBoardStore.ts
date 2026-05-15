@@ -52,7 +52,21 @@ export type ShapeType =
   | 'pyr4' | 'pyr3' | 'pyr6'
   | 'cone' | 'cylinder' | 'sphere';
 
-export type ShapeData = { id: string; type: ShapeType; x: number; y: number; width: number; height: number; rotation?: number; rows?: number; cols?: number };
+export type ShapeData = {
+  id: string;
+  type: ShapeType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  rows?: number;
+  cols?: number;
+  stroke?: string;
+  strokeWidth?: number;
+  dash?: number[];
+  opacity?: number;
+};
 type HistorySnapshot = {
   lines: LineData[];
   texts: TextData[];
