@@ -47,6 +47,12 @@ export default function MenuPanel() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [changeUiScale]);
 
+  useEffect(() => {
+    const openStylePanel = () => setActiveTab('settings');
+    window.addEventListener('board:open-style-panel', openStylePanel);
+    return () => window.removeEventListener('board:open-style-panel', openStylePanel);
+  }, []);
+
   const renderToggle = (label: string, state: string, setState: (val: any) => void) => (
     <div className="flex items-center justify-between mb-4">
       <span className="text-sm text-gray-600">{label}</span>

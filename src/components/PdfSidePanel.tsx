@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Cloud, FileImage, FileText, Folder, LogOut, Trash2, UserCircle, X } from 'lucide-react';
 import { PdfPageData, useBoardStore } from '../store/useBoardStore';
+import { fitImageToViewport } from '../lib/imageSizing';
 
 type SelectionState = {
   pageNumber: number;
@@ -480,9 +481,26 @@ export default function PdfSidePanel() {
     return () => window.removeEventListener('board:import-pdf', handlePdfImport);
   }, [importPdf]);
 
+  useEffect(() => {
+    if (!floatingClip) return;
+
+    const moveFloatingClip = (event: PointerEvent) => {
+      setFloatingClip((current) => current ? { ...current, x: event.clientX + 18, y: event.clientY + 18 } : current);
+    };
+    const clearFloatingClip = () => setFloatingClip(null);
+
+    window.addEventListener('pointermove', moveFloatingClip);
+    window.addEventListener('board:clip-placed', clearFloatingClip);
+    return () => {
+      window.removeEventListener('pointermove', moveFloatingClip);
+      window.removeEventListener('board:clip-placed', clearFloatingClip);
+    };
+  }, [floatingClip]);
+
   const addImageFromPage = async (page: PdfPageData, index: number) => {
-    const width = page.width;
-    const height = page.height;
+    const fitted = fitImageToViewport(page.width, page.height, stageScale);
+    const width = fitted.width;
+    const height = fitted.height;
     const target = cursorPosition || {
       x: (-stagePos.x + window.innerWidth / 2) / stageScale,
       y: (-stagePos.y + window.innerHeight / 2) / stageScale,
@@ -519,13 +537,14 @@ export default function PdfSidePanel() {
           y: (-stagePos.y + window.innerHeight / 2) / stageScale,
         };
         const preparedSrc = await prepareImageSrc(src);
+        const fitted = fitImageToViewport(image.width, image.height, stageScale);
         addImage({
           id: 'drive-image-' + file.id + '-' + Date.now().toString(),
           src: preparedSrc,
-          x: target.x - image.width / 2,
-          y: target.y - image.height / 2,
-          width: image.width,
-          height: image.height,
+          x: target.x - fitted.width / 2,
+          y: target.y - fitted.height / 2,
+          width: fitted.width,
+          height: fitted.height,
           naturalWidth: image.width,
           naturalHeight: image.height,
         });
@@ -668,10 +687,11 @@ export default function PdfSidePanel() {
       canvas.height = Math.round(rect.height);
       context.drawImage(source, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
       const src = transparentizeWhiteCanvas(canvas);
+      const fitted = fitImageToViewport(canvas.width, canvas.height, stageScale);
       setPendingPlacementImage({
         src,
-        width: canvas.width,
-        height: canvas.height,
+        width: fitted.width,
+        height: fitted.height,
         naturalWidth: canvas.width,
         naturalHeight: canvas.height,
       });

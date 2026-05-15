@@ -3,6 +3,7 @@
 import { Stage, Layer, Line, Image as KonvaImage, Rect, Ellipse, Transformer, Path, Arrow, Group, Circle, Text as KonvaText } from 'react-konva';
 import { ImageCrop, ImageData, useBoardStore } from '../store/useBoardStore';
 import { getShapePath } from '../lib/shapeGeometry';
+import { fitImageToViewport } from '../lib/imageSizing';
 import { useEffect, useState, useRef, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import useImage from 'use-image';
@@ -306,8 +307,14 @@ export default function Board() {
 
   useEffect(() => {
     if (!textEditor || !textAreaRef.current) return;
-    textAreaRef.current.focus();
-    textAreaRef.current.select();
+    const frame = window.requestAnimationFrame(() => {
+      const textArea = textAreaRef.current;
+      if (!textArea) return;
+      textArea.focus({ preventScroll: true });
+      const cursorPosition = textArea.value.length;
+      textArea.setSelectionRange(cursorPosition, cursorPosition);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [textEditor?.id, textEditor?.x, textEditor?.y]);
 
   useEffect(() => {
@@ -564,8 +571,9 @@ export default function Board() {
     if (pos) setCursorPosition(pos);
 
     if (pendingPlacementImage && pos) {
-      const width = pendingPlacementImage.width;
-      const height = pendingPlacementImage.height;
+      const fitted = fitImageToViewport(pendingPlacementImage.width, pendingPlacementImage.height, stageScale);
+      const width = fitted.width;
+      const height = fitted.height;
       addImage({
         id: 'clip-' + Date.now().toString(),
         src: pendingPlacementImage.src,
@@ -1298,6 +1306,7 @@ export default function Board() {
               fontSize: Math.max(18, textEditor.fontSize * stageScale),
               lineHeight: 1.18,
               pointerEvents: 'auto',
+              caretColor: '#7c3aed',
             }}
             placeholder="Wpisz tekst..."
           />

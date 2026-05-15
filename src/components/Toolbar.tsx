@@ -2,6 +2,7 @@
 
 import { useBoardStore, Tool } from '../store/useBoardStore';
 import { useRef } from 'react';
+import { fitImageToViewport } from '../lib/imageSizing';
 import { 
   MousePointer2, Hand, Shapes, 
   Type, Image as ImageIcon, Eraser, FileText, Minus, Plus, Undo2, Redo2, Wand2, Highlighter, Bot, KeyRound
@@ -46,8 +47,9 @@ export default function Toolbar() {
       x: (-stagePos.x + window.innerWidth / 2) / stageScale,
       y: (-stagePos.y + window.innerHeight / 2) / stageScale,
     };
-    const displayWidth = width;
-    const displayHeight = height;
+    const fitted = fitImageToViewport(width, height, stageScale);
+    const displayWidth = fitted.width;
+    const displayHeight = fitted.height;
 
     addImage({
       id: 'img-' + Date.now().toString() + '-' + Math.floor(Math.random() * 1000),
@@ -140,6 +142,12 @@ export default function Toolbar() {
               <button
                 key={t.id}
                 onClick={() => handleToolClick(t.id)}
+                onDoubleClick={(event) => {
+                  if (t.id !== 'draw' && t.id !== 'highlight') return;
+                  event.preventDefault();
+                  handleToolClick(t.id);
+                  window.dispatchEvent(new Event('board:open-style-panel'));
+                }}
                 className={`p-2.5 rounded-xl transition-all ${isActive ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-400' : 'text-gray-900 hover:bg-gray-100'}`}
                 title={t.name}
               >
