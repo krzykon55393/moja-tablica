@@ -23,6 +23,78 @@ const summarizeBoard = (board: BoardSaveData) => {
   return textParts.join('\n\n').slice(0, 10000);
 };
 
+const renderInline = (text: string) => {
+  const parts = text.split(/(\*\*[^*]+\*\*|\$[^$]+\$|`[^`]+`)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('$') && part.endsWith('$')) {
+      return <span key={index} className="rounded bg-violet-50 px-1 font-semibold text-violet-900">{part.slice(1, -1)}</span>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={index} className="rounded bg-slate-100 px-1 font-semibold text-slate-900">{part.slice(1, -1)}</code>;
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
+const renderAiAnswer = (text: string) => {
+  const normalized = text
+    .replace(/\r\n/g, '\n')
+    .replace(/```(?:[a-zA-Z]+)?\n?/g, '')
+    .replace(/\\\[/g, '$$')
+    .replace(/\\\]/g, '$$')
+    .trim();
+
+  if (!normalized) return null;
+
+  const blocks = normalized.split(/\n{2,}/).filter((block) => block.trim() !== '');
+  return (
+    <div className="space-y-3">
+      {blocks.map((block, blockIndex) => {
+        const trimmed = block.trim();
+        const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean);
+        const isMathBlock = lines.length > 1 && lines.every((line) => /^[{(]?[0-9a-zA-Z\\+\-*/=^_.,;: ]+[)}]?$/.test(line));
+
+        if (trimmed.startsWith('#')) {
+          return (
+            <h3 key={blockIndex} className="text-base font-black text-slate-950">
+              {renderInline(trimmed.replace(/^#+\s*/, ''))}
+            </h3>
+          );
+        }
+
+        if (isMathBlock || trimmed.startsWith('$$')) {
+          return (
+            <div key={blockIndex} className="rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 font-semibold leading-8 text-slate-950">
+              {lines.map((line, lineIndex) => (
+                <div key={lineIndex}>{line.replace(/\$\$/g, '')}</div>
+              ))}
+            </div>
+          );
+        }
+
+        if (/^(\d+\.|[-•])\s/.test(trimmed)) {
+          return (
+            <div key={blockIndex} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 leading-7 text-slate-800">
+              {lines.map((line, lineIndex) => (
+                <div key={lineIndex}>{renderInline(line)}</div>
+              ))}
+            </div>
+          );
+        }
+
+        return (
+          <p key={blockIndex} className="leading-7 text-slate-800">
+            {renderInline(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
 export default function BoardAiPanel() {
   const activeTool = useBoardStore((state) => state.activeTool);
   const setActiveTool = useBoardStore((state) => state.setActiveTool);
@@ -75,7 +147,7 @@ export default function BoardAiPanel() {
         transformOrigin: 'top right',
       }}
     >
-      <div className="flex h-full flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <div
           className="flex cursor-move items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2"
           onPointerDown={(event) => {
@@ -113,7 +185,7 @@ export default function BoardAiPanel() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto p-3">
+        <div className="min-h-0 flex-1 overflow-auto p-3 pb-16">
           <button
             type="button"
             onClick={() => {
@@ -148,8 +220,13 @@ export default function BoardAiPanel() {
             Rozwiąż z AI
           </button>
 
-          <div className="mt-3 min-h-32 whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-sm leading-relaxed text-white">
-            {isLoading ? 'AI pracuje...' : answer}
+          <div className="mt-3 min-h-32 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-inner">
+            {isLoading ? (
+              <div className="flex items-center gap-2 font-bold text-violet-700">
+                <Loader2 size={16} className="animate-spin" />
+                AI pracuje...
+              </div>
+            ) : renderAiAnswer(answer)}
           </div>
         </div>
 
