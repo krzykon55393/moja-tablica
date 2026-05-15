@@ -1,0 +1,1241 @@
+'use client';
+
+import { Stage, Layer, Line, Image as KonvaImage, Rect, Ellipse, Transformer, Path, Arrow, Group, Circle, Text as KonvaText } from 'react-konva';
+import { ImageCrop, ImageData, useBoardStore } from '../store/useBoardStore';
+import { useEffect, useState, useRef, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
+import useImage from 'use-image';
+
+const CanvasImage = ({
+  imgData,
+  isDraggable,
+  onSelect,
+  onChange,
+  onEdgeDrag,
+}: {
+  imgData: ImageData,
+  isDraggable: boolean,
+  onSelect: () => void,
+  onChange: (newData: Partial<ImageData>) => void,
+  onEdgeDrag: (event: any, node: any) => void,
+}) => {
+  const [image] = useImage(imgData.src);
+  return (
+    <Group
+      id={imgData.id}
+      x={imgData.x}
+      y={imgData.y}
+      width={imgData.width}
+      height={imgData.height}
+      rotation={imgData.rotation || 0}
+      draggable={isDraggable}
+      onPointerDown={() => {
+        onSelect();
+      }}
+      onDragEnd={(e) => {
+        onChange({ x: e.currentTarget.x(), y: e.currentTarget.y() });
+      }}
+      onDragMove={(e) => onEdgeDrag(e, e.currentTarget)}
+      onTransformEnd={(e) => {
+        const node = e.currentTarget;
+        const scaleX = node.scaleX();
+        const scaleY = node.scaleY();
+
+        node.scaleX(1);
+        node.scaleY(1);
+
+        onChange({
+          x: node.x(),
+          y: node.y(),
+          width: Math.max(5, imgData.width * scaleX),
+          height: Math.max(5, imgData.height * scaleY),
+          rotation: node.rotation(),
+        });
+      }}
+    >
+      <Rect width={imgData.width} height={imgData.height} fill="white" opacity={0.01} />
+      <KonvaImage
+        image={image}
+        x={0}
+        y={0}
+        width={imgData.width}
+        height={imgData.height}
+        crop={imgData.crop}
+        listening={false}
+      />
+    </Group>
+  );
+};
+
+type TextEditorState = {
+  id?: string;
+  x: number;
+  y: number;
+  value: string;
+  width: number;
+  fontSize: number;
+};
+
+export default function Board() {
+  const {
+    activeTool, bgColor, lines, setLines, grid, dots, theme,
+    stagePos, setStagePos, stageScale, setStageScale, images, shapes, texts,
+    strokeColor, strokeWidth, strokeDash,
+    pendingPlacementImage, setPendingPlacementImage,
+    addImage, updateImage, updateShape, addText, updateText, selectedId, setSelectedId, setCursorPosition,
+    uiScale, deleteSelected, undo, redo
+  } = useBoardStore();
+
+  const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
+  const [cropRect, setCropRect] = useState<ImageCrop | null>(null);
+  const [cropImageId, setCropImageId] = useState<string | null>(null);
+  const [exportPatternBounds, setExportPatternBounds] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
+  const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
+  const isDrawing = useRef(false);
+  const trRef = useRef<any>(null);
+  const cropTrRef = useRef<any>(null);
+  const cropRectRef = useRef<any>(null);
+  const stageRef = useRef<any>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectedImage = images.find((img) => img.id === selectedId) || null;
+  const isCropping = !!cropImageId && !!cropRect;
+  const edgePanState = useRef({ x: 0, y: 0 });
+  const drawingLineId = useRef<string | null>(null);
+  const rawDrawingPoints = useRef<number[]>([]);
+  const smartDrawing = useRef(false);
+  const smartDrawingTimer = useRef<number | null>(null);
+  const drawingStartPoint = useRef<{ x: number; y: number } | null>(null);
+  const lastDrawingPoint = useRef<{ x: number; y: number } | null>(null);
+  const eraseHistoryRecorded = useRef(false);
+
+  useEffect(() => {
+    setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (smartDrawingTimer.current) window.clearTimeout(smartDrawingTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const download = (href: string, filename: string) => {
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = filename;
+      link.click();
+    };
+
+    const createSnapshot = (mimeType = 'image/png') => {
+      const stage = stageRef.current;
+      if (!stage) return null;
+
+      const exportMargin = 90;
+      const lineBounds = lines.flatMap((line) => {
+        const xs = line.points.filter((_, index) => index % 2 === 0);
+        const ys = line.points.filter((_, index) => index % 2 === 1);
+        if (!xs.length || !ys.length) return [];
+        const padding = (line.strokeWidth || 3) + 10;
+        return [{
+          minX: Math.min(...xs) - padding,
+          minY: Math.min(...ys) - padding,
+          maxX: Math.max(...xs) + padding,
+          maxY: Math.max(...ys) + padding,
+        }];
+      });
+      const imageBounds = images.map((image) => ({
+        minX: image.x,
+        minY: image.y,
+        maxX: image.x + image.width,
+        maxY: image.y + image.height,
+      }));
+      const shapeBounds = shapes.map((shape) => ({
+        minX: shape.x - 12,
+        minY: shape.y - 12,
+        maxX: shape.x + shape.width + 12,
+        maxY: shape.y + shape.height + 12,
+      }));
+      const textBounds = texts.map((text) => ({
+        minX: text.x - 8,
+        minY: text.y - 8,
+        maxX: text.x + text.width + 8,
+        maxY: text.y + text.fontSize * Math.max(1.4, text.text.split('\n').length * 1.25) + 8,
+      }));
+      const bounds = [...lineBounds, ...imageBounds, ...shapeBounds, ...textBounds];
+      const viewBounds = {
+        minX: -stagePos.x / stageScale,
+        minY: -stagePos.y / stageScale,
+        maxX: (-stagePos.x + windowSize.width) / stageScale,
+        maxY: (-stagePos.y + windowSize.height) / stageScale,
+      };
+      const contentBounds = bounds.length ? {
+        minX: Math.min(...bounds.map((box) => box.minX)) - exportMargin,
+        minY: Math.min(...bounds.map((box) => box.minY)) - exportMargin,
+        maxX: Math.max(...bounds.map((box) => box.maxX)) + exportMargin,
+        maxY: Math.max(...bounds.map((box) => box.maxY)) + exportMargin,
+      } : viewBounds;
+      const exportWidth = Math.max(1, Math.ceil(contentBounds.maxX - contentBounds.minX));
+      const exportHeight = Math.max(1, Math.ceil(contentBounds.maxY - contentBounds.minY));
+      const previousScale = { x: stage.scaleX(), y: stage.scaleY() };
+      const previousPosition = { x: stage.x(), y: stage.y() };
+      const previousSize = { width: stage.width(), height: stage.height() };
+      const backgroundNode = stage.findOne('.board-background');
+      const previousBackground = backgroundNode ? {
+        x: backgroundNode.x(),
+        y: backgroundNode.y(),
+        width: backgroundNode.width(),
+        height: backgroundNode.height(),
+      } : null;
+      const temporarilyHiddenNodes = [trRef.current, cropTrRef.current, cropRectRef.current].filter(Boolean);
+
+      flushSync(() => setExportPatternBounds(contentBounds));
+      stage.scale({ x: 1, y: 1 });
+      stage.position({ x: -contentBounds.minX, y: -contentBounds.minY });
+      stage.size({ width: exportWidth, height: exportHeight });
+      if (backgroundNode) {
+        backgroundNode.position({ x: contentBounds.minX, y: contentBounds.minY });
+        backgroundNode.size({ width: exportWidth, height: exportHeight });
+      }
+      temporarilyHiddenNodes.forEach((node: any) => node.visible(false));
+      stage.batchDraw();
+
+      const dataUrl = stage.toDataURL({
+        mimeType,
+        pixelRatio: 1,
+        x: 0,
+        y: 0,
+        width: exportWidth,
+        height: exportHeight,
+      });
+
+      flushSync(() => setExportPatternBounds(null));
+      temporarilyHiddenNodes.forEach((node: any) => node.visible(true));
+      if (backgroundNode && previousBackground) {
+        backgroundNode.position({ x: previousBackground.x, y: previousBackground.y });
+        backgroundNode.size({ width: previousBackground.width, height: previousBackground.height });
+      }
+      stage.scale(previousScale);
+      stage.position(previousPosition);
+      stage.size(previousSize);
+      stage.batchDraw();
+      return { dataUrl, width: exportWidth, height: exportHeight };
+    };
+
+    const handleExportPng = () => {
+      const snapshot = createSnapshot('image/png');
+      if (snapshot) download(snapshot.dataUrl, 'moja-tablica.png');
+    };
+
+    const handleExportPdf = () => {
+      const snapshot = createSnapshot('image/jpeg');
+      if (!snapshot) return;
+
+      const imageBytes = atob(snapshot.dataUrl.split(',')[1]);
+      const width = Math.round(snapshot.width);
+      const height = Math.round(snapshot.height);
+      const objects = [
+        '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+        '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+        `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`,
+        `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n${imageBytes}\nendstream\nendobj\n`,
+        `5 0 obj\n<< /Length 44 >>\nstream\nq\n${width} 0 0 ${height} 0 0 cm\n/Im0 Do\nQ\nendstream\nendobj\n`,
+      ];
+      let body = '%PDF-1.4\n';
+      const offsets = [0];
+      objects.forEach((object) => {
+        offsets.push(body.length);
+        body += object;
+      });
+      const xrefOffset = body.length;
+      body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+      offsets.slice(1).forEach((offset) => {
+        body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+      });
+      body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+      const bytes = new Uint8Array(body.length);
+      for (let i = 0; i < body.length; i += 1) bytes[i] = body.charCodeAt(i) & 0xff;
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      download(url, 'moja-tablica.pdf');
+      URL.revokeObjectURL(url);
+    };
+
+    window.addEventListener('board:export-png', handleExportPng);
+    window.addEventListener('board:export-pdf', handleExportPdf);
+    return () => {
+      window.removeEventListener('board:export-png', handleExportPng);
+      window.removeEventListener('board:export-pdf', handleExportPdf);
+    };
+  }, [bgColor, images, lines, shapes, stagePos, stageScale, texts, windowSize]);
+
+  // OBSŁUGA RAMKI (TRANSFORMERA)
+  useEffect(() => {
+    if (trRef.current) {
+      if (selectedId) {
+        const selectedNode = trRef.current.getStage().findOne((node: any) => node.id() === selectedId);
+        if (selectedNode) {
+          trRef.current.nodes([selectedNode]);
+          trRef.current.getLayer().batchDraw();
+        } else {
+          trRef.current.nodes([]);
+          trRef.current.getLayer().batchDraw();
+        }
+      } else {
+        trRef.current.nodes([]);
+        trRef.current.getLayer().batchDraw();
+      }
+    }
+  }, [selectedId, shapes, images, texts]);
+
+  useEffect(() => {
+    if (cropTrRef.current && cropRectRef.current && cropRect) {
+      cropTrRef.current.nodes([cropRectRef.current]);
+      cropTrRef.current.getLayer().batchDraw();
+    }
+  }, [cropRect]);
+
+  useEffect(() => {
+    if (!textEditor || !textAreaRef.current) return;
+    textAreaRef.current.focus();
+    textAreaRef.current.select();
+  }, [textEditor]);
+
+  useEffect(() => {
+    const handleKeyboardShortcuts = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+      const isUndo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !event.shiftKey;
+      const isRedo = ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && event.shiftKey) ||
+        ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y');
+
+      if (isUndo) {
+        event.preventDefault();
+        undo();
+        return;
+      }
+      if (isRedo) {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (!isTyping && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault();
+        if (isCropping) cancelCrop();
+        else deleteSelected();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyboardShortcuts);
+    return () => window.removeEventListener('keydown', handleKeyboardShortcuts);
+  }, [deleteSelected, isCropping, redo, undo]);
+
+  const getRelativePointerPosition = (stage: any) => {
+    const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return null;
+    return {
+      x: (pointerPosition.x - stage.x()) / stageScale,
+      y: (pointerPosition.y - stage.y()) / stageScale,
+    };
+  };
+
+  const openTextEditor = (text: TextEditorState) => {
+    setSelectedId(text.id || null);
+    setTextEditor(text);
+  };
+
+  const commitTextEditor = () => {
+    if (!textEditor) return;
+    const value = textEditor.value.trim();
+
+    if (value) {
+      if (textEditor.id) {
+        updateText(textEditor.id, {
+          text: value,
+          width: Math.max(120, textEditor.width),
+          fontSize: textEditor.fontSize,
+        });
+      } else {
+        addText({
+          id: 'text-' + Date.now().toString(),
+          x: textEditor.x,
+          y: textEditor.y,
+          text: value,
+          width: Math.max(180, textEditor.width),
+          fontSize: textEditor.fontSize,
+          fill: strokeColor,
+        });
+      }
+    }
+
+    setTextEditor(null);
+  };
+
+  const cancelTextEditor = () => setTextEditor(null);
+
+  const getTextEditorScreenPosition = () => {
+    if (!textEditor) return { left: 0, top: 0 };
+    return {
+      left: stagePos.x + textEditor.x * stageScale,
+      top: stagePos.y + textEditor.y * stageScale,
+    };
+  };
+
+  const getPointDistance = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
+
+  const getPointList = (points: number[]) => {
+    const list: { x: number; y: number }[] = [];
+    for (let index = 0; index < points.length - 1; index += 2) {
+      list.push({ x: points[index], y: points[index + 1] });
+    }
+    return list;
+  };
+
+  const getDrawingBounds = (points: number[]) => {
+    const pointList = getPointList(points);
+    const xs = pointList.map((point) => point.x);
+    const ys = pointList.map((point) => point.y);
+    return {
+      minX: Math.min(...xs),
+      minY: Math.min(...ys),
+      maxX: Math.max(...xs),
+      maxY: Math.max(...ys),
+      width: Math.max(...xs) - Math.min(...xs),
+      height: Math.max(...ys) - Math.min(...ys),
+    };
+  };
+
+  const isClosedDrawing = (points: number[]) => {
+    if (points.length < 20) return false;
+    const bounds = getDrawingBounds(points);
+    const diagonal = Math.hypot(bounds.width, bounds.height);
+    if (diagonal < 35) return false;
+    const closeDistance = getPointDistance(points[0], points[1], points[points.length - 2], points[points.length - 1]);
+    return closeDistance <= Math.max(22, Math.min(80, diagonal * 0.16));
+  };
+
+  const getPerpendicularDistance = (
+    point: { x: number; y: number },
+    start: { x: number; y: number },
+    end: { x: number; y: number }
+  ) => {
+    const length = getPointDistance(start.x, start.y, end.x, end.y);
+    if (!length) return getPointDistance(point.x, point.y, start.x, start.y);
+    return Math.abs((end.y - start.y) * point.x - (end.x - start.x) * point.y + end.x * start.y - end.y * start.x) / length;
+  };
+
+  const simplifyPoints = (points: { x: number; y: number }[], epsilon: number): { x: number; y: number }[] => {
+    if (points.length <= 2) return points;
+
+    let maxDistance = 0;
+    let splitIndex = 0;
+    const first = points[0];
+    const last = points[points.length - 1];
+
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const distance = getPerpendicularDistance(points[index], first, last);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        splitIndex = index;
+      }
+    }
+
+    if (maxDistance <= epsilon) return [first, last];
+    const left = simplifyPoints(points.slice(0, splitIndex + 1), epsilon);
+    const right = simplifyPoints(points.slice(splitIndex), epsilon);
+    return [...left.slice(0, -1), ...right];
+  };
+
+  const pointsToLine = (points: { x: number; y: number }[], close = false) => {
+    const flattened = points.flatMap((point) => [point.x, point.y]);
+    if (close && points.length) flattened.push(points[0].x, points[0].y);
+    return flattened;
+  };
+
+  const getIdealEllipsePoints = (bounds: ReturnType<typeof getDrawingBounds>) => {
+    const centerX = bounds.minX + bounds.width / 2;
+    const centerY = bounds.minY + bounds.height / 2;
+    const radiusX = Math.max(8, bounds.width / 2);
+    const radiusY = Math.max(8, bounds.height / 2);
+    const points = Array.from({ length: 48 }, (_, index) => {
+      const angle = (Math.PI * 2 * index) / 48;
+      return { x: centerX + Math.cos(angle) * radiusX, y: centerY + Math.sin(angle) * radiusY };
+    });
+    return pointsToLine(points, true);
+  };
+
+  const idealizeDrawing = (points: number[]) => {
+    if (points.length < 4) return points;
+    const bounds = getDrawingBounds(points);
+    const closed = isClosedDrawing(points);
+    if (!closed) return [points[0], points[1], points[points.length - 2], points[points.length - 1]];
+
+    const rawPoints = getPointList(points);
+    const openPoints = rawPoints.slice(0, -1);
+    const epsilon = Math.max(8, Math.min(bounds.width, bounds.height) * 0.09);
+    const simplified = simplifyPoints(openPoints, epsilon);
+    const uniquePoints = simplified.filter((point, index, list) => {
+      if (index === 0) return true;
+      const previous = list[index - 1];
+      return getPointDistance(point.x, point.y, previous.x, previous.y) > 10;
+    });
+
+    if (uniquePoints.length === 4) {
+      return pointsToLine([
+        { x: bounds.minX, y: bounds.minY },
+        { x: bounds.maxX, y: bounds.minY },
+        { x: bounds.maxX, y: bounds.maxY },
+        { x: bounds.minX, y: bounds.maxY },
+      ], true);
+    }
+
+    if (uniquePoints.length >= 3 && uniquePoints.length <= 6) return pointsToLine(uniquePoints, true);
+    return getIdealEllipsePoints(bounds);
+  };
+
+  const scheduleSmartDrawing = () => {
+    if (smartDrawing.current) return;
+    if (smartDrawingTimer.current) window.clearTimeout(smartDrawingTimer.current);
+    smartDrawingTimer.current = window.setTimeout(() => {
+      if (!isDrawing.current || !drawingLineId.current || rawDrawingPoints.current.length < 4) return;
+      smartDrawing.current = true;
+      const lineId = drawingLineId.current;
+      const previewPoints = idealizeDrawing(rawDrawingPoints.current);
+      setLines((prev: any) => prev.map((line: any) => (
+        line.id === lineId ? { ...line, points: previewPoints } : line
+      )), { record: false });
+    }, 520);
+  };
+
+  const getEdgePanDelta = (clientX: number, clientY: number) => {
+    const edge = Math.min(90, Math.max(44, Math.min(windowSize.width, windowSize.height) * 0.12));
+    const maxSpeed = 24;
+    let dx = 0;
+    let dy = 0;
+
+    if (clientX < edge) dx = maxSpeed * (1 - clientX / edge);
+    else if (clientX > windowSize.width - edge) dx = -maxSpeed * (1 - (windowSize.width - clientX) / edge);
+
+    if (clientY < edge) dy = maxSpeed * (1 - clientY / edge);
+    else if (clientY > windowSize.height - edge) dy = -maxSpeed * (1 - (windowSize.height - clientY) / edge);
+
+    return { x: dx, y: dy };
+  };
+
+  const panNearViewportEdge = (clientX: number, clientY: number, keepNodeUnderPointer?: (delta: { x: number; y: number }) => void) => {
+    if (!windowSize.width || !windowSize.height) return { x: 0, y: 0 };
+    const delta = getEdgePanDelta(clientX, clientY);
+    if (!delta.x && !delta.y) return delta;
+
+    const currentPos = edgePanState.current;
+    const nextPos = { x: currentPos.x + delta.x, y: currentPos.y + delta.y };
+    edgePanState.current = nextPos;
+    stageRef.current?.position(nextPos);
+    stageRef.current?.batchDraw();
+    setStagePos(nextPos);
+    keepNodeUnderPointer?.(delta);
+    return delta;
+  };
+
+  const handleNodeEdgeDrag = (event: any, node: any) => {
+    const pointerEvent = event.evt;
+    if (!pointerEvent) return;
+    panNearViewportEdge(pointerEvent.clientX, pointerEvent.clientY, (delta) => {
+      node.position({
+        x: node.x() - delta.x / stageScale,
+        y: node.y() - delta.y / stageScale,
+      });
+    });
+  };
+
+  const handleStagePointerDown = (e: any) => {
+    const stage = e.target.getStage();
+    const clickedOn = e.target;
+    const pos = getRelativePointerPosition(stage);
+    if (pos) setCursorPosition(pos);
+
+    if (pendingPlacementImage && pos) {
+      const width = pendingPlacementImage.width;
+      const height = pendingPlacementImage.height;
+      addImage({
+        id: 'clip-' + Date.now().toString(),
+        src: pendingPlacementImage.src,
+        x: pos.x - width / 2,
+        y: pos.y - height / 2,
+        width,
+        height,
+        naturalWidth: pendingPlacementImage.naturalWidth,
+        naturalHeight: pendingPlacementImage.naturalHeight,
+      });
+      setPendingPlacementImage(null);
+      window.dispatchEvent(new Event('board:clip-placed'));
+      return;
+    }
+
+    const clickedOnBoard = clickedOn === stage || clickedOn.name?.() === 'board-background';
+
+    if (activeTool === 'text' && pos && clickedOn.getClassName?.() !== 'Text') {
+      openTextEditor({
+        x: pos.x,
+        y: pos.y,
+        value: '',
+        width: 260,
+        fontSize: 28,
+      });
+      return;
+    }
+
+    // Kliknięcie w pustą tablicę odznacza figury
+    if (clickedOnBoard) {
+      setSelectedId(null);
+      if (activeTool !== 'draw' && activeTool !== 'pan') return;
+    }
+
+    if (activeTool === 'erase') {
+      eraseHistoryRecorded.current = false;
+      if (clickedOn.getClassName() === 'Line' && clickedOn.id() && clickedOn.id().startsWith('line-')) {
+        setLines((prev: any) => prev.filter((l: any) => l.id !== clickedOn.id()));
+        eraseHistoryRecorded.current = true;
+      }
+      return;
+    }
+
+    if (activeTool === 'draw') {
+      isDrawing.current = true;
+      if (pos) {
+        const newId = 'line-' + Date.now();
+        const dash = strokeDash === 'dash' ? [18, 12] : strokeDash === 'dot' ? [2, 10] : undefined;
+        drawingLineId.current = newId;
+        rawDrawingPoints.current = [pos.x, pos.y];
+        drawingStartPoint.current = pos;
+        lastDrawingPoint.current = pos;
+        smartDrawing.current = false;
+        scheduleSmartDrawing();
+        setLines((prev: any) => [...prev, { id: newId, points: [pos.x, pos.y], stroke: strokeColor, strokeWidth, dash }]);
+      }
+    }
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (e.evt && (isDrawing.current || e.evt.buttons === 1)) {
+      panNearViewportEdge(e.evt.clientX, e.evt.clientY);
+    }
+
+    const pos = getRelativePointerPosition(e.target.getStage());
+    if (pos) setCursorPosition(pos);
+
+    if (activeTool === 'pan') return;
+    if (activeTool === 'erase' && e.evt.buttons === 1) {
+      const hoveredOn = e.target;
+      if (hoveredOn.getClassName() === 'Line' && hoveredOn.id() && hoveredOn.id().startsWith('line-')) {
+        if (!eraseHistoryRecorded.current) {
+          setLines((prev: any) => prev);
+          eraseHistoryRecorded.current = true;
+        }
+        setLines((prev: any) => prev.filter((l: any) => l.id !== hoveredOn.id()), { record: false });
+      }
+      return;
+    }
+    if (!isDrawing.current || activeTool !== 'draw') return;
+
+    if (!pos) return;
+
+    if (!smartDrawing.current && lastDrawingPoint.current) {
+      const distanceFromLastPoint = getPointDistance(lastDrawingPoint.current.x, lastDrawingPoint.current.y, pos.x, pos.y);
+      if (distanceFromLastPoint > 3) {
+        lastDrawingPoint.current = pos;
+        scheduleSmartDrawing();
+      }
+    }
+
+    rawDrawingPoints.current = [...rawDrawingPoints.current, pos.x, pos.y];
+
+    setLines((prev: any) => {
+      const newLines = [...prev];
+      const lastLine = { ...newLines[newLines.length - 1] };
+      const rawPoints = rawDrawingPoints.current;
+      lastLine.points = smartDrawing.current ? idealizeDrawing(rawPoints) : rawPoints;
+      newLines[newLines.length - 1] = lastLine;
+      return newLines;
+    }, { record: false });
+  };
+
+  const handlePointerUp = () => {
+    if (smartDrawingTimer.current) {
+      window.clearTimeout(smartDrawingTimer.current);
+      smartDrawingTimer.current = null;
+    }
+    if (smartDrawing.current && isDrawing.current && drawingLineId.current && rawDrawingPoints.current.length >= 4) {
+      const lineId = drawingLineId.current;
+      const finalPoints = idealizeDrawing(rawDrawingPoints.current);
+      setLines((prev: any) => prev.map((line: any) => (
+        line.id === lineId ? { ...line, points: finalPoints } : line
+      )), { record: false });
+    }
+    isDrawing.current = false;
+    drawingLineId.current = null;
+    rawDrawingPoints.current = [];
+    drawingStartPoint.current = null;
+    lastDrawingPoint.current = null;
+    smartDrawing.current = false;
+    eraseHistoryRecorded.current = false;
+  };
+
+  const handleDragStage = (e: any) => {
+    if (e.target === e.target.getStage()) {
+      const nextPos = { x: e.target.x(), y: e.target.y() };
+      edgePanState.current = nextPos;
+      setStagePos(nextPos);
+    }
+  };
+
+  const handleWheel = (e: any) => {
+    e.evt.preventDefault();
+    const stage = e.target.getStage();
+    const pointer = stage.getPointerPosition() || { x: windowSize.width / 2, y: windowSize.height / 2 };
+    const isZoomGesture = e.evt.ctrlKey || e.evt.metaKey;
+
+    if (isZoomGesture) {
+      const oldScale = stageScale;
+      const direction = e.evt.deltaY > 0 ? -1 : 1;
+      const scaleStep = Math.abs(e.evt.deltaY) > 80 ? 0.14 : 0.08;
+      const nextScale = Math.max(0.25, Math.min(3, oldScale * (direction > 0 ? 1 + scaleStep : 1 - scaleStep)));
+      const pointerBoardPosition = {
+        x: (pointer.x - stagePos.x) / oldScale,
+        y: (pointer.y - stagePos.y) / oldScale,
+      };
+      const nextPos = {
+        x: pointer.x - pointerBoardPosition.x * nextScale,
+        y: pointer.y - pointerBoardPosition.y * nextScale,
+      };
+      edgePanState.current = nextPos;
+      setStageScale(nextScale);
+      setStagePos(nextPos);
+      return;
+    }
+
+    const nextPos = {
+      x: stagePos.x - e.evt.deltaX,
+      y: stagePos.y - e.evt.deltaY,
+    };
+    edgePanState.current = nextPos;
+    setStagePos(nextPos);
+  };
+
+  const startCrop = () => {
+    if (!selectedImage) return;
+    setCropImageId(selectedImage.id);
+    setCropRect({
+      x: selectedImage.x,
+      y: selectedImage.y,
+      width: selectedImage.width,
+      height: selectedImage.height,
+    });
+  };
+
+  const cancelCrop = () => {
+    setCropImageId(null);
+    setCropRect(null);
+  };
+
+  const applyCrop = () => {
+    if (!cropRect || !selectedImage) return;
+
+    const naturalWidth = selectedImage.naturalWidth || selectedImage.crop?.width || selectedImage.width;
+    const naturalHeight = selectedImage.naturalHeight || selectedImage.crop?.height || selectedImage.height;
+    const baseCrop = selectedImage.crop || { x: 0, y: 0, width: naturalWidth, height: naturalHeight };
+    const visibleCrop = clampCropRect(cropRect);
+    const nextCrop = {
+      x: baseCrop.x + ((visibleCrop.x - selectedImage.x) / selectedImage.width) * baseCrop.width,
+      y: baseCrop.y + ((visibleCrop.y - selectedImage.y) / selectedImage.height) * baseCrop.height,
+      width: (visibleCrop.width / selectedImage.width) * baseCrop.width,
+      height: (visibleCrop.height / selectedImage.height) * baseCrop.height,
+    };
+
+    updateImage(selectedImage.id, {
+      x: visibleCrop.x,
+      y: visibleCrop.y,
+      width: visibleCrop.width,
+      height: visibleCrop.height,
+      crop: {
+        x: Math.max(0, nextCrop.x),
+        y: Math.max(0, nextCrop.y),
+        width: Math.max(1, Math.min(naturalWidth - Math.max(0, nextCrop.x), nextCrop.width)),
+        height: Math.max(1, Math.min(naturalHeight - Math.max(0, nextCrop.y), nextCrop.height)),
+      },
+    });
+    cancelCrop();
+  };
+
+  const rotateSelectedImage = () => {
+    if (!selectedImage) return;
+    updateImage(selectedImage.id, {
+      rotation: ((selectedImage.rotation || 0) + 90) % 360,
+    });
+  };
+
+  const resizeSelectedImage = (factor: number) => {
+    if (!selectedImage) return;
+    const nextWidth = Math.max(20, selectedImage.width * factor);
+    const nextHeight = Math.max(20, selectedImage.height * factor);
+    updateImage(selectedImage.id, {
+      x: selectedImage.x - (nextWidth - selectedImage.width) / 2,
+      y: selectedImage.y - (nextHeight - selectedImage.height) / 2,
+      width: nextWidth,
+      height: nextHeight,
+    });
+  };
+
+  const clampCropRect = (rect: ImageCrop) => {
+    if (!selectedImage) return rect;
+    const minSize = 12;
+    const maxWidth = Math.max(minSize, selectedImage.width);
+    const maxHeight = Math.max(minSize, selectedImage.height);
+    const width = Math.min(Math.max(minSize, rect.width), maxWidth);
+    const height = Math.min(Math.max(minSize, rect.height), maxHeight);
+    const x = Math.max(selectedImage.x, Math.min(rect.x, selectedImage.x + selectedImage.width - width));
+    const y = Math.max(selectedImage.y, Math.min(rect.y, selectedImage.y + selectedImage.height - height));
+    return { x, y, width, height };
+  };
+
+  const syncCropRectFromNode = (node: any, sourceRect: ImageCrop) => {
+    const nextRect = clampCropRect({
+      x: node.x(),
+      y: node.y(),
+      width: sourceRect.width * node.scaleX(),
+      height: sourceRect.height * node.scaleY(),
+    });
+    node.scaleX(1);
+    node.scaleY(1);
+    node.position({ x: nextRect.x, y: nextRect.y });
+    node.size({ width: nextRect.width, height: nextRect.height });
+    setCropRect(nextRect);
+  };
+
+  const getBackgroundStyles = (): React.CSSProperties => {
+    const styles: React.CSSProperties = { backgroundColor: bgColor, transition: 'background-color 0.3s ease, filter 0.3s ease' };
+    const bgImages = []; const bgSizes = [];
+    if (grid !== 'brak') {
+      const s = grid === 'S' ? 20 : grid === 'M' ? 40 : 60;
+      bgImages.push(`linear-gradient(to right, rgba(0,0,0,0.1) 1px, transparent 1px)`, `linear-gradient(to bottom, rgba(0,0,0,0.1) 1px, transparent 1px)`);
+      bgSizes.push(`${s * stageScale}px ${s * stageScale}px`, `${s * stageScale}px ${s * stageScale}px`);
+    }
+    if (dots !== 'brak') {
+      const s = dots === 'S' ? 20 : dots === 'M' ? 40 : 60;
+      bgImages.push(`radial-gradient(circle, rgba(0,0,0,0.15) 1.5px, transparent 1.5px)`);
+      bgSizes.push(`${s * stageScale}px ${s * stageScale}px`);
+    }
+    if (bgImages.length > 0) {
+      styles.backgroundImage = bgImages.join(', ');
+      styles.backgroundSize = bgSizes.join(', ');
+      styles.backgroundPosition = bgImages.map(() => `${stagePos.x}px ${stagePos.y}px`).join(', ');
+    }
+    if (theme === 'dark') styles.filter = 'invert(1) hue-rotate(180deg)';
+    return styles;
+  };
+
+  if (windowSize.width === 0) return null;
+
+  const renderBoardPattern = () => {
+    const patternSize = grid !== 'brak'
+      ? grid === 'S' ? 20 : grid === 'M' ? 40 : 60
+      : dots !== 'brak' ? dots === 'S' ? 20 : dots === 'M' ? 40 : 60 : 0;
+
+    if (!patternSize) return null;
+
+    const viewX = exportPatternBounds ? exportPatternBounds.minX : -stagePos.x / stageScale;
+    const viewY = exportPatternBounds ? exportPatternBounds.minY : -stagePos.y / stageScale;
+    const viewWidth = exportPatternBounds ? exportPatternBounds.maxX - exportPatternBounds.minX : windowSize.width / stageScale;
+    const viewHeight = exportPatternBounds ? exportPatternBounds.maxY - exportPatternBounds.minY : windowSize.height / stageScale;
+    const startX = Math.floor(viewX / patternSize) * patternSize;
+    const startY = Math.floor(viewY / patternSize) * patternSize;
+    const endX = viewX + viewWidth;
+    const endY = viewY + viewHeight;
+    const elements: ReactNode[] = [];
+
+    if (grid !== 'brak') {
+      for (let x = startX; x <= endX; x += patternSize) {
+        elements.push(
+          <Line
+            key={`grid-x-${x}`}
+            points={[x, viewY, x, endY]}
+            stroke="rgba(0,0,0,0.12)"
+            strokeWidth={1 / stageScale}
+            listening={false}
+            perfectDrawEnabled={false}
+          />
+        );
+      }
+      for (let y = startY; y <= endY; y += patternSize) {
+        elements.push(
+          <Line
+            key={`grid-y-${y}`}
+            points={[viewX, y, endX, y]}
+            stroke="rgba(0,0,0,0.12)"
+            strokeWidth={1 / stageScale}
+            listening={false}
+            perfectDrawEnabled={false}
+          />
+        );
+      }
+    }
+
+    if (dots !== 'brak') {
+      const columns = Math.ceil(viewWidth / patternSize);
+      const rows = Math.ceil(viewHeight / patternSize);
+      const dotStep = columns * rows > 5000
+        ? patternSize * Math.ceil(Math.sqrt((columns * rows) / 5000))
+        : patternSize;
+
+      for (let x = startX; x <= endX; x += dotStep) {
+        for (let y = startY; y <= endY; y += dotStep) {
+          elements.push(
+            <Circle
+              key={`dot-${x}-${y}`}
+              x={x}
+              y={y}
+              radius={1.8 / stageScale}
+              fill="rgba(0,0,0,0.22)"
+              listening={false}
+            />
+          );
+        }
+      }
+    }
+
+    return elements;
+  };
+
+  const renderShapeContent = (shape: any, w: number, h: number) => {
+    const dash = strokeDash === 'dash' ? [18, 12] : strokeDash === 'dot' ? [2, 10] : undefined;
+    const strokeProps = { stroke: strokeColor, strokeWidth, dash, lineJoin: "round" as any, lineCap: "round" as any };
+
+    if (shape.type === 'vector') return <Arrow points={[0, 0, w, h]} fill={strokeColor} pointerLength={15} pointerWidth={15} {...strokeProps} />;
+    if (shape.type === 'line_seg') return <Line points={[0, 0, w, h]} {...strokeProps} />;
+    if (shape.type === 'coords') return (
+      <>
+        <Arrow points={[0, h/2, w, h/2]} fill={strokeColor} pointerLength={12} pointerWidth={12} {...strokeProps} />
+        <Arrow points={[w/2, h, w/2, 0]} fill={strokeColor} pointerLength={12} pointerWidth={12} {...strokeProps} />
+      </>
+    );
+
+    if (shape.type === 'rect') return <Rect width={w} height={h} {...strokeProps} />;
+    if (shape.type === 'ellipse') return <Ellipse x={w/2} y={h/2} radiusX={w/2} radiusY={h/2} {...strokeProps} />;
+    
+    let d = "";
+    if (shape.type === 'rhombus') d = `M ${w/2} 0 L ${w} ${h/2} L ${w/2} ${h} L 0 ${h/2} Z`;
+    else if (shape.type === 'triangle') d = `M ${w/2} 0 L ${w} ${h} L 0 ${h} Z`;
+    else if (shape.type === 'rtriangle') d = `M 0 0 L 0 ${h} L ${w} ${h} Z`;
+    else if (shape.type === 'trapezoid') d = `M ${w*0.34} 0 L ${w*0.66} 0 L ${w} ${h} L 0 ${h} Z`;
+    else if (shape.type === 'rtrapezoid') d = `M 0 0 L ${w*0.62} 0 L ${w} ${h} L 0 ${h} Z`;
+    else if (shape.type === 'hexagon') d = `M ${w*0.25} 0 L ${w*0.75} 0 L ${w} ${h/2} L ${w*0.75} ${h} L ${w*0.25} ${h} L 0 ${h/2} Z`;
+    else if (shape.type === 'pentagon') d = `M ${w/2} 0 L ${w} ${h*0.4} L ${w*0.8} ${h} L ${w*0.2} ${h} L 0 ${h*0.4} Z`;
+    else if (shape.type === 'table') {
+      const rows = shape.rows || 3;
+      const cols = shape.cols || 3;
+      d = `M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`;
+      for (let row = 1; row < rows; row += 1) d += ` M 0 ${(h / rows) * row} L ${w} ${(h / rows) * row}`;
+      for (let col = 1; col < cols; col += 1) d += ` M ${(w / cols) * col} 0 L ${(w / cols) * col} ${h}`;
+    }
+    
+    else if (shape.type === 'cube') d = `M 0 ${h*0.3} L ${w*0.7} ${h*0.3} L ${w*0.7} ${h} L 0 ${h} Z M ${w*0.3} 0 L ${w} 0 L ${w} ${h*0.7} L ${w*0.3} ${h*0.7} Z M 0 ${h*0.3} L ${w*0.3} 0 M ${w*0.7} ${h*0.3} L ${w} 0 M ${w*0.7} ${h} L ${w} ${h*0.7} M 0 ${h} L ${w*0.3} ${h*0.7}`;
+    else if (shape.type === 'prism3') d = `M 0 ${h} L ${w*0.7} ${h} L ${w*0.35} ${h*0.7} Z M 0 ${h*0.3} L ${w*0.7} ${h*0.3} L ${w*0.35} 0 Z M 0 ${h*0.3} L 0 ${h} M ${w*0.7} ${h*0.3} L ${w*0.7} ${h} M ${w*0.35} 0 L ${w*0.35} ${h*0.7}`;
+    else if (shape.type === 'prism6') d = `M ${w*0.2} ${h*0.1} L ${w*0.8} ${h*0.1} L ${w} ${h*0.2} L ${w*0.8} ${h*0.3} L ${w*0.2} ${h*0.3} L 0 ${h*0.2} Z M ${w*0.2} ${h*0.8} L ${w*0.8} ${h*0.8} L ${w} ${h*0.9} L ${w*0.8} ${h} L ${w*0.2} ${h} L 0 ${h*0.9} Z M ${w*0.2} ${h*0.1} L ${w*0.2} ${h*0.8} M ${w*0.8} ${h*0.1} L ${w*0.8} ${h*0.8} M ${w} ${h*0.2} L ${w} ${h*0.9} M 0 ${h*0.2} L 0 ${h*0.9} M ${w*0.8} ${h*0.3} L ${w*0.8} ${h} M ${w*0.2} ${h*0.3} L ${w*0.2} ${h}`;
+    
+    else if (shape.type === 'pyr4') d = `M 0 ${h*0.8} L ${w*0.7} ${h*0.8} L ${w} ${h} L ${w*0.3} ${h} Z M 0 ${h*0.8} L ${w*0.5} 0 M ${w*0.7} ${h*0.8} L ${w*0.5} 0 M ${w} ${h} L ${w*0.5} 0 M ${w*0.3} ${h} L ${w*0.5} 0`;
+    else if (shape.type === 'pyr3') d = `M 0 ${h*0.9} L ${w*0.8} ${h*0.8} L ${w} ${h} Z M 0 ${h*0.9} L ${w*0.5} 0 M ${w*0.8} ${h*0.8} L ${w*0.5} 0 M ${w} ${h} L ${w*0.5} 0`;
+    else if (shape.type === 'pyr6') d = `M ${w*0.2} ${h*0.8} L ${w*0.8} ${h*0.8} L ${w} ${h*0.9} L ${w*0.8} ${h} L ${w*0.2} ${h} L 0 ${h*0.9} Z M ${w*0.2} ${h*0.8} L ${w*0.5} 0 M ${w*0.8} ${h*0.8} L ${w*0.5} 0 M ${w} ${h*0.9} L ${w*0.5} 0 M ${w*0.8} ${h} L ${w*0.5} 0 M ${w*0.2} ${h} L ${w*0.5} 0 M 0 ${h*0.9} L ${w*0.5} 0`;
+    
+    else if (shape.type === 'cone') d = `M 0 ${h*0.9} A ${w/2} ${h*0.1} 0 1 0 ${w} ${h*0.9} A ${w/2} ${h*0.1} 0 1 0 0 ${h*0.9} M 0 ${h*0.9} L ${w/2} 0 L ${w} ${h*0.9}`;
+    else if (shape.type === 'cylinder') d = `M 0 ${h*0.1} A ${w/2} ${h*0.1} 0 1 0 ${w} ${h*0.1} A ${w/2} ${h*0.1} 0 1 0 0 ${h*0.1} M 0 ${h*0.1} L 0 ${h*0.9} A ${w/2} ${h*0.1} 0 1 0 ${w} ${h*0.9} L ${w} ${h*0.1} M 0 ${h*0.9} A ${w/2} ${h*0.1} 0 1 1 ${w} ${h*0.9}`;
+    else if (shape.type === 'sphere') d = `M 0 ${h/2} A ${w/2} ${h/2} 0 1 0 ${w} ${h/2} A ${w/2} ${h/2} 0 1 0 0 ${h/2} M 0 ${h/2} A ${w/2} ${h*0.15} 0 1 0 ${w} ${h/2} A ${w/2} ${h*0.15} 0 1 0 0 ${h/2}`;
+
+    if (d) return <Path data={d} {...strokeProps} />;
+    return null;
+  };
+
+  // touchAction: 'none' zapobiega przechwytywaniu przeciągania przez przeglądarkę
+  return (
+    <div className={`absolute inset-0 w-full h-full ${activeTool === 'pan' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`} style={{ ...getBackgroundStyles(), touchAction: 'none' }}>
+      {pendingPlacementImage && (
+        <div
+          className="pointer-events-none fixed left-1/2 top-4 z-[90] -translate-x-1/2 rounded-2xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-xl"
+          style={{ transform: `translateX(-50%) scale(${uiScale})`, transformOrigin: 'top center' }}
+        >
+          Kliknij na tablicy, aby wkleić wycinek PDF
+        </div>
+      )}
+      {activeTool === 'text' && !textEditor && (
+        <div
+          className="pointer-events-none fixed left-1/2 top-20 z-[90] -translate-x-1/2 rounded-full bg-slate-900/55 px-4 py-2 text-xs font-medium text-white/85 shadow-lg backdrop-blur"
+          style={{ transform: `translateX(-50%) scale(${uiScale})`, transformOrigin: 'top center' }}
+        >
+          Kliknij na tablicę i wpisz tekst. Enter zapisuje, Shift+Enter nowa linia.
+        </div>
+      )}
+      <Stage
+        ref={stageRef}
+        width={windowSize.width} height={windowSize.height} x={stagePos.x} y={stagePos.y} scaleX={stageScale} scaleY={stageScale}
+        draggable={activeTool === 'pan'} onDragMove={handleDragStage} onWheel={handleWheel} onPointerDown={handleStagePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}
+      >
+        <Layer>
+          <Rect
+            name="board-background"
+            x={-stagePos.x / stageScale}
+            y={-stagePos.y / stageScale}
+            width={windowSize.width / stageScale}
+            height={windowSize.height / stageScale}
+            fill={bgColor}
+            listening={true}
+          />
+          {renderBoardPattern()}
+          {images.map((img) => (
+            <CanvasImage 
+              key={img.id} 
+              imgData={img} 
+              isDraggable={activeTool === 'select'}
+              onSelect={() => {
+                if (activeTool === 'select') {
+                  setSelectedId(img.id);
+                  if (cropImageId && cropImageId !== img.id) cancelCrop();
+                }
+              }}
+              onChange={(newData) => updateImage(img.id, newData)}
+              onEdgeDrag={handleNodeEdgeDrag}
+            />
+          ))}
+
+          {shapes.map((shape) => {
+            const w = shape.width || 100;
+            const h = shape.height || 100;
+
+            return (
+              <Group
+                key={shape.id}
+                id={shape.id}
+                x={shape.x}
+                y={shape.y}
+                width={w}
+                height={h}
+                rotation={shape.rotation || 0}
+                draggable={activeTool === 'select'}
+                onDragMove={(e) => handleNodeEdgeDrag(e, e.currentTarget)}
+                onDragEnd={(e) => {
+                  updateShape(shape.id, { x: e.currentTarget.x(), y: e.currentTarget.y() });
+                }}
+                onTransformEnd={(e) => {
+                  const node = e.currentTarget;
+                  const scaleX = node.scaleX();
+                  const scaleY = node.scaleY();
+                  
+                  // Resetujemy wizualną skalę do 1, a przeliczamy rzeczywiste width i height
+                  node.scaleX(1);
+                  node.scaleY(1);
+                  
+                  updateShape(shape.id, {
+                    x: node.x(),
+                    y: node.y(),
+                    width: Math.max(5, w * scaleX),
+                    height: Math.max(5, h * scaleY),
+                    rotation: node.rotation(),
+                  });
+                }}
+                onPointerDown={(e) => {
+                  if (activeTool === 'select') {
+                    // Zaznaczamy figurę bez wymuszania cancelBubble
+                    setSelectedId(shape.id);
+                  }
+                }}
+              >
+                <Rect width={w} height={h} fill="white" opacity={0.01} />
+                {renderShapeContent(shape, w, h)}
+              </Group>
+            );
+          })}
+
+          {texts.map((text) => (
+            <KonvaText
+              key={text.id}
+              id={text.id}
+              x={text.x}
+              y={text.y}
+              text={text.text}
+              width={text.width}
+              fontSize={text.fontSize}
+              fill={text.fill || strokeColor}
+              rotation={text.rotation || 0}
+              lineHeight={1.18}
+              draggable={activeTool === 'select'}
+              onPointerDown={(e) => {
+                if (activeTool === 'text') {
+                  openTextEditor({
+                    id: text.id,
+                    x: text.x,
+                    y: text.y,
+                    value: text.text,
+                    width: text.width,
+                    fontSize: text.fontSize,
+                  });
+                  return;
+                }
+                if (activeTool === 'select') setSelectedId(text.id);
+              }}
+              onDblClick={() => openTextEditor({
+                id: text.id,
+                x: text.x,
+                y: text.y,
+                value: text.text,
+                width: text.width,
+                fontSize: text.fontSize,
+              })}
+              onDblTap={() => openTextEditor({
+                id: text.id,
+                x: text.x,
+                y: text.y,
+                value: text.text,
+                width: text.width,
+                fontSize: text.fontSize,
+              })}
+              onDragMove={(e) => handleNodeEdgeDrag(e, e.currentTarget)}
+              onDragEnd={(e) => updateText(text.id, { x: e.currentTarget.x(), y: e.currentTarget.y() })}
+              onTransformEnd={(e) => {
+                const node = e.currentTarget;
+                const scaleX = node.scaleX();
+                const scaleY = node.scaleY();
+                node.scaleX(1);
+                node.scaleY(1);
+                updateText(text.id, {
+                  x: node.x(),
+                  y: node.y(),
+                  width: Math.max(80, text.width * scaleX),
+                  fontSize: Math.max(10, text.fontSize * scaleY),
+                  rotation: node.rotation(),
+                });
+              }}
+            />
+          ))}
+
+          {isCropping && cropRect && (
+            <>
+              <Rect
+                ref={cropRectRef}
+                x={cropRect.x}
+                y={cropRect.y}
+                width={cropRect.width}
+                height={cropRect.height}
+                draggable
+                stroke="#7c3aed"
+                strokeWidth={2}
+                dash={[8, 6]}
+                fill="rgba(124,58,237,0.08)"
+                onDragMove={(e) => {
+                  handleNodeEdgeDrag(e, e.currentTarget);
+                  const nextRect = clampCropRect({ ...cropRect, x: e.currentTarget.x(), y: e.currentTarget.y() });
+                  e.currentTarget.position({ x: nextRect.x, y: nextRect.y });
+                  setCropRect(nextRect);
+                }}
+                onDragEnd={(e) => {
+                  const nextRect = clampCropRect({ ...cropRect, x: e.currentTarget.x(), y: e.currentTarget.y() });
+                  e.currentTarget.position({ x: nextRect.x, y: nextRect.y });
+                  setCropRect(nextRect);
+                }}
+                onTransformEnd={(e) => {
+                  syncCropRectFromNode(e.currentTarget, cropRect);
+                }}
+              />
+              <Transformer ref={cropTrRef} rotateEnabled={false} />
+            </>
+          )}
+
+          {lines.map((line) => (
+            <Line
+              key={line.id}
+              id={line.id}
+              points={line.points}
+              stroke={line.stroke || "#1e1e1e"}
+              strokeWidth={line.strokeWidth || 3}
+              dash={line.dash}
+              tension={0}
+              lineCap="round"
+              lineJoin="round"
+              perfectDrawEnabled={false}
+              hitStrokeWidth={10}
+            />
+          ))}
+
+          {activeTool === 'select' && (
+            <Transformer
+              ref={trRef}
+              rotateEnabled={true}
+              enabledAnchors={isCropping ? [] : undefined}
+              ignoreStroke={true}
+              borderStroke="#7c3aed"
+              anchorStroke="#7c3aed"
+              anchorFill="#ffffff"
+              anchorSize={12}
+              boundBoxFunc={(oldBox, newBox) => {
+                if (Math.abs(newBox.width) < 5 || Math.abs(newBox.height) < 5) return oldBox;
+                return newBox;
+              }}
+            />
+          )}
+        </Layer>
+      </Stage>
+      {textEditor && (() => {
+        const position = getTextEditorScreenPosition();
+        return (
+          <textarea
+            ref={textAreaRef}
+            value={textEditor.value}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => setTextEditor({ ...textEditor, value: event.target.value })}
+            onBlur={commitTextEditor}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                cancelTextEditor();
+              }
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                commitTextEditor();
+              }
+            }}
+            className="fixed z-[140] min-h-12 resize both rounded-lg border-2 border-violet-500 bg-white px-3 py-2 leading-tight text-slate-950 shadow-2xl outline-none ring-4 ring-violet-200/70"
+            style={{
+              left: position.left,
+              top: position.top,
+              width: Math.max(180, textEditor.width * stageScale),
+              minWidth: 120,
+              fontSize: textEditor.fontSize * stageScale,
+              lineHeight: 1.18,
+              pointerEvents: 'auto',
+            }}
+            placeholder="Wpisz tekst..."
+          />
+        );
+      })()}
+      {selectedImage && (
+        <div
+          className="absolute left-1/2 top-4 z-[95] flex -translate-x-1/2 gap-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-2"
+          style={{ transform: `translateX(-50%) scale(${uiScale})`, transformOrigin: 'top center' }}
+        >
+          {isCropping ? (
+            <>
+              <button onClick={applyCrop} className="px-4 py-2 rounded-xl bg-violet-600 text-white font-semibold">Zastosuj przycięcie</button>
+              <button onClick={cancelCrop} className="px-4 py-2 rounded-xl hover:bg-slate-100 font-semibold">Anuluj</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => resizeSelectedImage(0.9)} className="px-3 py-2 rounded-xl hover:bg-violet-50 text-violet-700 font-semibold">-</button>
+              <button onClick={() => resizeSelectedImage(1.1)} className="px-3 py-2 rounded-xl hover:bg-violet-50 text-violet-700 font-semibold">+</button>
+              <button onClick={startCrop} className="px-4 py-2 rounded-xl hover:bg-violet-50 text-violet-700 font-semibold">Przytnij zdjęcie</button>
+              <button onClick={rotateSelectedImage} className="px-4 py-2 rounded-xl hover:bg-violet-50 text-violet-700 font-semibold">Obróć 90°</button>
+              <button onClick={deleteSelected} className="px-4 py-2 rounded-xl hover:bg-red-50 text-red-600 font-semibold">Usuń</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
