@@ -33,7 +33,7 @@ export default function BoardAnswersPanel() {
       const url = new URL(getBoardAiUrl());
       url.searchParams.set('action', 'test_answers');
       url.searchParams.set('room', getRoom());
-      const response = await fetch(url.toString(), { credentials: 'include' });
+      const response = await fetch(url.toString());
       const data = await response.json();
       setAnswer(data.status === 'success' ? (data.answers || 'Brak wygenerowanych odpowiedzi do zadania domowego/testu.') : (data.message || 'Nie udało się wczytać odpowiedzi.'));
     } catch {

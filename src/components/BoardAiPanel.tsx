@@ -45,7 +45,6 @@ export default function BoardAiPanel() {
       const response = await fetch(getBoardAiUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           mode: 'solve',
           context: boardContext,
