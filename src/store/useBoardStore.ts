@@ -316,22 +316,31 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       theme: state.theme,
     };
   },
-  loadBoard: (data) => set({
-    lines: data.lines || [],
-    texts: data.texts || [],
-    images: data.images || [],
-    shapes: data.shapes || [],
-    pdfDocuments: data.pdfDocuments || [],
-    activePdfId: data.pdfDocuments?.[0]?.id || null,
-    bgColor: data.bgColor || '#ffffff',
-    grid: data.grid || 'M',
-    dots: data.dots || 'brak',
-    theme: data.theme || 'light',
-    selectedId: null,
-    past: [],
-    future: [],
-    canUndo: false,
-    canRedo: false,
-  }),
+  loadBoard: (data) => {
+    const lines = data.lines || [];
+    const texts = data.texts || [];
+    const images = data.images || [];
+    const shapes = data.shapes || [];
+    const pdfDocuments = data.pdfDocuments || [];
+    const hasContent = lines.length > 0 || texts.length > 0 || images.length > 0 || shapes.length > 0 || pdfDocuments.length > 0;
+
+    return set({
+      lines,
+      texts,
+      images,
+      shapes,
+      pdfDocuments,
+      activePdfId: pdfDocuments[0]?.id || null,
+      bgColor: hasContent ? (data.bgColor || '#ffffff') : '#ffffff',
+      grid: hasContent ? (data.grid || 'M') : 'M',
+      dots: hasContent ? (data.dots || 'brak') : 'brak',
+      theme: data.theme || 'light',
+      selectedId: null,
+      past: [],
+      future: [],
+      canUndo: false,
+      canRedo: false,
+    });
+  },
   clearBoard: () => set((state) => ({ ...withHistory(state), lines: [], texts: [], images: [], shapes: [], selectedId: null })),
 }));

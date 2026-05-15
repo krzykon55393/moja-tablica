@@ -116,6 +116,7 @@ export default function Board() {
   const smartDrawingTimer = useRef<number | null>(null);
   const drawingStartPoint = useRef<{ x: number; y: number } | null>(null);
   const lastDrawingPoint = useRef<{ x: number; y: number } | null>(null);
+  const drawingStartTime = useRef(0);
   const eraseHistoryRecorded = useRef(false);
   const aiSelectionStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -407,6 +408,15 @@ export default function Board() {
     return list;
   };
 
+  const getPathLength = (points: number[]) => {
+    const pointList = getPointList(points);
+    return pointList.reduce((total, point, index) => {
+      if (index === 0) return total;
+      const previous = pointList[index - 1];
+      return total + getPointDistance(previous.x, previous.y, point.x, point.y);
+    }, 0);
+  };
+
   const getDrawingBounds = (points: number[]) => {
     const pointList = getPointList(points);
     const xs = pointList.map((point) => point.x);
@@ -495,18 +505,31 @@ export default function Board() {
       const previous = list[index - 1];
       return getPointDistance(point.x, point.y, previous.x, previous.y) > 10;
     });
-
-    if (uniquePoints.length === 4) {
-      return pointsToLine([
-        { x: bounds.minX, y: bounds.minY },
-        { x: bounds.maxX, y: bounds.minY },
-        { x: bounds.maxX, y: bounds.maxY },
-        { x: bounds.minX, y: bounds.maxY },
-      ], true);
+    if (uniquePoints.length > 3) {
+      const first = uniquePoints[0];
+      const last = uniquePoints[uniquePoints.length - 1];
+      if (getPointDistance(first.x, first.y, last.x, last.y) <= Math.max(14, Math.min(bounds.width, bounds.height) * 0.18)) {
+        uniquePoints.pop();
+      }
     }
 
     if (uniquePoints.length >= 3 && uniquePoints.length <= 6) return pointsToLine(uniquePoints, true);
     return getIdealEllipsePoints(bounds);
+  };
+
+  const shouldDiscardQuickScribble = (points: number[]) => {
+    if (points.length < 4 || activeTool === 'highlight') return false;
+    const duration = Date.now() - drawingStartTime.current;
+    if (duration > 460) return false;
+
+    const pathLength = getPathLength(points);
+    const directDistance = getPointDistance(points[0], points[1], points[points.length - 2], points[points.length - 1]);
+    const bounds = getDrawingBounds(points);
+    const diagonal = Math.hypot(bounds.width, bounds.height);
+    const isTinyMark = pathLength < 18 || diagonal < 10;
+    const isChaoticScribble = pathLength > 90 && directDistance / Math.max(1, pathLength) < 0.42;
+
+    return isTinyMark || isChaoticScribble;
   };
 
   const scheduleSmartDrawing = () => {
@@ -635,6 +658,7 @@ export default function Board() {
         rawDrawingPoints.current = [pos.x, pos.y];
         drawingStartPoint.current = pos;
         lastDrawingPoint.current = pos;
+        drawingStartTime.current = Date.now();
         smartDrawing.current = false;
         if (!isHighlight) scheduleSmartDrawing();
         setLines((prev: any) => [...prev, {
@@ -759,6 +783,19 @@ export default function Board() {
       window.clearTimeout(smartDrawingTimer.current);
       smartDrawingTimer.current = null;
     }
+    if (isDrawing.current && drawingLineId.current && shouldDiscardQuickScribble(rawDrawingPoints.current)) {
+      const lineId = drawingLineId.current;
+      setLines((prev: any) => prev.filter((line: any) => line.id !== lineId), { record: false });
+      isDrawing.current = false;
+      drawingLineId.current = null;
+      rawDrawingPoints.current = [];
+      drawingStartPoint.current = null;
+      lastDrawingPoint.current = null;
+      drawingStartTime.current = 0;
+      smartDrawing.current = false;
+      eraseHistoryRecorded.current = false;
+      return;
+    }
     if (activeTool !== 'highlight' && smartDrawing.current && isDrawing.current && drawingLineId.current && rawDrawingPoints.current.length >= 4) {
       const lineId = drawingLineId.current;
       const finalPoints = idealizeDrawing(rawDrawingPoints.current);
@@ -771,6 +808,7 @@ export default function Board() {
     rawDrawingPoints.current = [];
     drawingStartPoint.current = null;
     lastDrawingPoint.current = null;
+    drawingStartTime.current = 0;
     smartDrawing.current = false;
     eraseHistoryRecorded.current = false;
   };
