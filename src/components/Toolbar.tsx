@@ -101,39 +101,39 @@ export default function Toolbar() {
   return (
     <>
       <div
-        className="flex items-center gap-3"
-        style={{ transform: `scale(${uiScale})`, transformOrigin: 'bottom center' }}
+        className="flex items-center gap-2"
+        style={{ transform: `scale(${uiScale * 0.88})`, transformOrigin: 'bottom center' }}
       >
-        <div className="flex items-center gap-1 bg-white px-3 py-2 rounded-2xl shadow-sm border border-gray-200">
-          <button onClick={() => setStageScale(Math.max(0.25, stageScale - 0.1))} className="p-2.5 rounded-xl hover:bg-gray-100" title="Oddal">
-            <Minus size={20} />
+        <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-2xl shadow-sm border border-gray-200">
+          <button onClick={() => setStageScale(Math.max(0.25, stageScale - 0.1))} className="p-2 rounded-xl hover:bg-gray-100" title="Oddal">
+            <Minus size={18} />
           </button>
-          <span className="w-16 text-center font-medium">{Math.round(stageScale * 100)}%</span>
-          <button onClick={() => setStageScale(Math.min(3, stageScale + 0.1))} className="p-2.5 rounded-xl hover:bg-gray-100" title="Przybliż">
-            <Plus size={20} />
+          <span className="w-14 text-center font-medium">{Math.round(stageScale * 100)}%</span>
+          <button onClick={() => setStageScale(Math.min(3, stageScale + 0.1))} className="p-2 rounded-xl hover:bg-gray-100" title="Przybliż">
+            <Plus size={18} />
           </button>
         </div>
 
-        <div className="flex items-center gap-1 bg-white px-3 py-2 rounded-2xl shadow-sm border border-gray-200">
+        <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-2xl shadow-sm border border-gray-200">
           <button
             onClick={undo}
             disabled={!canUndo}
-            className={`p-2.5 rounded-xl ${canUndo ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300'}`}
+            className={`p-2 rounded-xl ${canUndo ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300'}`}
             title="Cofnij"
           >
-            <Undo2 size={20} />
+            <Undo2 size={18} />
           </button>
           <button
             onClick={redo}
             disabled={!canRedo}
-            className={`p-2.5 rounded-xl ${canRedo ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300'}`}
+            className={`p-2 rounded-xl ${canRedo ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300'}`}
             title="Ponów"
           >
-            <Redo2 size={20} />
+            <Redo2 size={18} />
           </button>
         </div>
 
-        <div className="flex items-center gap-1 bg-white px-3 py-2 rounded-2xl shadow-sm border border-gray-200">
+        <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-2xl shadow-sm border border-gray-200">
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
           {tools.map((t) => {
             const Icon = t.icon;
@@ -148,10 +148,10 @@ export default function Toolbar() {
                   handleToolClick(t.id);
                   window.dispatchEvent(new Event('board:open-style-panel'));
                 }}
-                className={`p-2.5 rounded-xl transition-all ${isActive ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-400' : 'text-gray-900 hover:bg-gray-100'}`}
+                className={`p-2 rounded-xl transition-all ${isActive ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-400' : 'text-gray-900 hover:bg-gray-100'}`}
                 title={t.name}
               >
-                <Icon size={22} />
+                <Icon size={20} />
               </button>
             );
           })}
@@ -160,20 +160,20 @@ export default function Toolbar() {
               setActiveTool('select');
               setIsPdfPanelOpen(!isPdfPanelOpen);
             }}
-            className={`p-2.5 rounded-xl transition-all ${isPdfPanelOpen ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-400' : 'text-gray-900 hover:bg-gray-100'}`}
+            className={`p-2 rounded-xl transition-all ${isPdfPanelOpen ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-400' : 'text-gray-900 hover:bg-gray-100'}`}
             title="Panel PDF / dokumentu"
           >
-            <FileText size={22} />
+            <FileText size={20} />
           </button>
           <button
             onClick={() => {
               setActiveTool('select');
               setIsAnswersPanelOpen(!isAnswersPanelOpen);
             }}
-            className={`p-2.5 rounded-xl transition-all ${isAnswersPanelOpen ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400' : 'text-gray-900 hover:bg-gray-100'}`}
+            className={`p-2 rounded-xl transition-all ${isAnswersPanelOpen ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400' : 'text-gray-900 hover:bg-gray-100'}`}
             title="Odpowiedzi do testu na tablicy"
           >
-            <KeyRound size={22} />
+            <KeyRound size={20} />
           </button>
         </div>
       </div>

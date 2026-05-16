@@ -1764,7 +1764,7 @@ export default function Board() {
                   commitTextEditor();
                 }
               }}
-              className="fixed z-[140] min-h-12 resize both rounded-lg border-2 border-violet-500 bg-white px-3 py-2 leading-tight text-slate-950 shadow-2xl outline-none ring-4 ring-violet-200/70"
+              className="fixed z-[140] min-h-12 resize both rounded-lg border-2 border-violet-500 bg-white/25 px-3 py-2 leading-tight text-slate-950 shadow-xl outline-none ring-4 ring-violet-200/45 backdrop-blur-[1px]"
               style={{
                 left: Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220)),
                 top: Math.min(Math.max(56, position.top), Math.max(56, windowSize.height - 120)),
