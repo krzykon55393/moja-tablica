@@ -4,13 +4,40 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Grip, Loader2, Minus, Move, Sparkles, X } from 'lucide-react';
 import { BoardSaveData, useBoardStore } from '../store/useBoardStore';
 
-const getBoardAiUrl = () => {
+const getBoardApiBaseUrl = () => {
   const params = new URLSearchParams(window.location.search);
   const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
-  const normalizedApi = window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
-  const url = new URL(normalizedApi, window.location.href);
+  return window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
+};
+
+const getBoardAiUrls = () => {
+  const url = new URL(getBoardApiBaseUrl(), window.location.href);
   url.searchParams.set('action', 'ai_solve');
-  return url.toString();
+
+  const legacyUrl = new URL(url.toString());
+  legacyUrl.pathname = legacyUrl.pathname.replace(/board_api\.php$/i, 'board_ai.php');
+  legacyUrl.searchParams.delete('action');
+
+  const urls = [url.toString(), legacyUrl.toString()];
+  return [...new Set(urls)];
+};
+
+const getReadableFetchError = (error: unknown) => {
+  if (error instanceof Error && error.message) return error.message;
+  return 'Nieznany błąd połączenia.';
+};
+
+const postAiRequest = async (url: string, body: Record<string, unknown>) => {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || data?.status !== 'success') {
+    throw new Error(data?.message || `Błąd AI (${response.status}).`);
+  }
+  return String(data.answer || '').trim();
 };
 
 const summarizeBoard = (board: BoardSaveData) => {
@@ -135,19 +162,25 @@ export default function BoardAiPanel() {
     const promptToSend = promptOverride ?? prompt;
     setIsLoading(true);
     try {
-      const response = await fetch(getBoardAiUrl(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const body = {
           prompt: promptToSend,
           context: boardContext,
           image: aiCapture?.dataUrl || '',
-        }),
-      });
-      const data = await response.json();
-      setAnswer(data.status === 'success' ? data.answer : (data.message || 'Nie udało się uzyskać odpowiedzi AI.'));
-    } catch {
-      setAnswer('Nie udało się połączyć z AI. Sprawdź, czy na serwerze jest aktualny plik /uczen/board_api.php z akcją ai_solve.');
+      };
+      const urls = getBoardAiUrls();
+      let lastError = '';
+      for (const url of urls) {
+        try {
+          const answerText = await postAiRequest(url, body);
+          setAnswer(answerText || 'AI nie zwróciło odpowiedzi.');
+          return;
+        } catch (requestError) {
+          lastError = getReadableFetchError(requestError);
+        }
+      }
+      setAnswer(`Nie udało się połączyć z AI. Ostatni błąd: ${lastError}`);
+    } catch (error) {
+      setAnswer(`Nie udało się połączyć z AI. ${getReadableFetchError(error)}`);
     } finally {
       setIsLoading(false);
     }
