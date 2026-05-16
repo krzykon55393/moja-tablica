@@ -92,9 +92,28 @@ type GoogleIdentity = {
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY || '';
 const GOOGLE_APP_ID = process.env.NEXT_PUBLIC_GOOGLE_APP_ID || '';
+const DEFAULT_BOARD_API_URL = process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
 const DRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder';
 const DRIVE_SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.readonly';
 const LOCAL_PDF_LIMIT = 5;
+
+const getBoardApiUrl = () => {
+  if (typeof window === 'undefined') return DEFAULT_BOARD_API_URL;
+  const params = new URLSearchParams(window.location.search);
+  const rawApiUrl = params.get('api') || DEFAULT_BOARD_API_URL;
+  if (window.location.protocol === 'https:' && rawApiUrl.includes('koreporeczki.cba.pl')) {
+    return 'https://core-czki.pl/uczen/board_api.php';
+  }
+  return window.location.protocol === 'https:' && rawApiUrl.startsWith('http://')
+    ? rawApiUrl.replace(/^http:\/\//, 'https://')
+    : rawApiUrl;
+};
+
+const getBoardRoom = () => {
+  if (typeof window === 'undefined') return 'default';
+  const params = new URLSearchParams(window.location.search);
+  return (params.get('room') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').toUpperCase();
+};
 
 export default function PdfSidePanel() {
   const {
@@ -390,6 +409,26 @@ export default function PdfSidePanel() {
     image.src = src;
   }), [removeWhiteBackground, transparentizeWhiteCanvas]);
 
+  const uploadMaterialToServer = useCallback(async (file: File) => {
+    const url = new URL(getBoardApiUrl());
+    url.searchParams.set('action', 'upload_material');
+
+    const formData = new FormData();
+    formData.append('room', getBoardRoom());
+    formData.append('file', file);
+
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success' || !data.url) {
+      throw new Error(data.message || 'Nie udało się wgrać pliku na serwer.');
+    }
+    return String(data.url);
+  }, []);
+
   const importPdf = useCallback(async (file: File) => {
     if (!driveAccessToken && pdfDocuments.length >= LOCAL_PDF_LIMIT) {
       alert(`Bez połączenia z Google Drive możesz mieć maksymalnie ${LOCAL_PDF_LIMIT} PDF-ów na koncie.`);
@@ -400,6 +439,8 @@ export default function PdfSidePanel() {
     setIsLoading(true);
 
     try {
+      const serverUrl = driveAccessToken ? '' : await uploadMaterialToServer(file);
+
       if (file.type.startsWith('image/')) {
         const src = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -417,8 +458,10 @@ export default function PdfSidePanel() {
         addPdfDocument({
           id: 'img-doc-' + Date.now().toString(),
           name: file.name,
-          className: driveAccessToken ? 'Google Drive' : 'Lokalne',
+          className: driveAccessToken ? 'Google Drive' : 'Serwer',
           folderName: driveFolderStack[driveFolderStack.length - 1]?.name || 'Materiały',
+          sourceUrl: serverUrl || undefined,
+          sourceType: driveAccessToken ? 'drive' : 'server',
           pages: [{
             pageNumber: 1,
             src,
@@ -461,16 +504,18 @@ export default function PdfSidePanel() {
       addPdfDocument({
         id: 'pdf-' + Date.now().toString(),
         name: file.name,
-        className: driveAccessToken ? 'Google Drive' : 'Lokalne',
+        className: driveAccessToken ? 'Google Drive' : 'Serwer',
         folderName: driveFolderStack[driveFolderStack.length - 1]?.name || 'Materiały',
+        sourceUrl: serverUrl || undefined,
+        sourceType: driveAccessToken ? 'drive' : 'server',
         pages,
       });
     } catch {
-      alert('Nie udało się zaimportować pliku. PDF wymaga jednorazowego pobrania PDF.js.');
+      alert('Nie udało się zaimportować pliku. Sprawdź, czy na serwerze jest aktualny /uczen/board_api.php i czy PDF.js się ładuje.');
     } finally {
       setIsLoading(false);
     }
-  }, [addPdfDocument, driveAccessToken, driveFolderStack, loadPdfJs, pdfDocuments.length, setIsPdfPanelOpen]);
+  }, [addPdfDocument, driveAccessToken, driveFolderStack, loadPdfJs, pdfDocuments.length, setIsPdfPanelOpen, uploadMaterialToServer]);
 
   useEffect(() => {
     const handlePdfImport = (event: Event) => {

@@ -29,6 +29,8 @@ export type PdfDocumentData = {
   name: string;
   className?: string;
   folderName?: string;
+  sourceUrl?: string;
+  sourceType?: 'server' | 'drive' | 'local';
   pages: PdfPageData[];
 };
 export type PendingPlacementImage = {

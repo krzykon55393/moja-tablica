@@ -91,7 +91,7 @@ export default function Board() {
     stagePos, setStagePos, stageScale, setStageScale, images, shapes, texts,
     strokeColor, strokeWidth, strokeOpacity, strokeDash,
     pendingPlacementImage, setPendingPlacementImage,
-    addImage, updateImage, updateShape, addText, updateText, selectedId, setSelectedId, setCursorPosition,
+    addImage, updateImage, updateShape, addText, updateText, selectedId, setSelectedId, cursorPosition, setCursorPosition,
     setAiCapture, uiScale, deleteSelected, undo, redo
   } = useBoardStore();
 
@@ -352,6 +352,50 @@ export default function Board() {
     window.addEventListener('keydown', handleKeyboardShortcuts);
     return () => window.removeEventListener('keydown', handleKeyboardShortcuts);
   }, [deleteSelected, isCropping, redo, undo]);
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      const targetElement = event.target as HTMLElement | null;
+      const isTyping = targetElement?.tagName === 'INPUT' || targetElement?.tagName === 'TEXTAREA' || targetElement?.isContentEditable;
+      if (isTyping) return;
+
+      const items = Array.from(event.clipboardData?.items || []);
+      const imageItem = items.find((item) => item.type.startsWith('image/'));
+      const file = imageItem?.getAsFile();
+      if (!file) return;
+
+      event.preventDefault();
+      const reader = new FileReader();
+      reader.onload = () => {
+        const src = String(reader.result || '');
+        if (!src) return;
+
+        const image = new Image();
+        image.onload = () => {
+          const target = cursorPosition || {
+            x: (-stagePos.x + window.innerWidth / 2) / stageScale,
+            y: (-stagePos.y + window.innerHeight / 2) / stageScale,
+          };
+          const fitted = fitImageToViewport(image.naturalWidth || image.width, image.naturalHeight || image.height, stageScale);
+          addImage({
+            id: 'paste-' + Date.now().toString(),
+            src,
+            x: target.x - fitted.width / 2,
+            y: target.y - fitted.height / 2,
+            width: fitted.width,
+            height: fitted.height,
+            naturalWidth: image.naturalWidth || image.width,
+            naturalHeight: image.naturalHeight || image.height,
+          });
+        };
+        image.src = src;
+      };
+      reader.readAsDataURL(file);
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [addImage, cursorPosition, stagePos.x, stagePos.y, stageScale]);
 
   const getRelativePointerPosition = (stage: any) => {
     const pointerPosition = stage.getPointerPosition();
