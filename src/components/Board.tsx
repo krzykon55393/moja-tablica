@@ -675,9 +675,7 @@ export default function Board() {
     const canDrawFreshCropRect = isCropping && selectedImage && pos && isPointInsideSelectedImage(pos) && !clickedOnCropAnchor && (!clickedOnCropRect || isCropRectFullImage());
 
     if (canDrawFreshCropRect) {
-      cropSelectionStart.current = pos;
-      const nextRect = clampCropRect({ x: pos.x, y: pos.y, width: 12, height: 12 });
-      setCropRect(nextRect);
+      startCropSelection(pos);
       return;
     }
 
@@ -747,14 +745,7 @@ export default function Board() {
     const pos = getRelativePointerPosition(stage);
 
     if (isCropping && cropSelectionStart.current && selectedImage && pos) {
-      const start = cropSelectionStart.current;
-      const end = clampPointToSelectedImage(pos);
-      setCropRect(clampCropRect({
-        x: Math.min(start.x, end.x),
-        y: Math.min(start.y, end.y),
-        width: Math.abs(end.x - start.x),
-        height: Math.abs(end.y - start.y),
-      }));
+      updateCropSelection(pos);
       return;
     }
 
@@ -1041,6 +1032,24 @@ export default function Board() {
       x: Math.max(selectedImage.x, Math.min(point.x, selectedImage.x + selectedImage.width)),
       y: Math.max(selectedImage.y, Math.min(point.y, selectedImage.y + selectedImage.height)),
     };
+  };
+
+  const startCropSelection = (point: { x: number; y: number }) => {
+    const start = clampPointToSelectedImage(point);
+    cropSelectionStart.current = start;
+    setCropRect(clampCropRect({ x: start.x, y: start.y, width: 12, height: 12 }));
+  };
+
+  const updateCropSelection = (point: { x: number; y: number }) => {
+    if (!cropSelectionStart.current || !selectedImage) return;
+    const start = cropSelectionStart.current;
+    const end = clampPointToSelectedImage(point);
+    setCropRect(clampCropRect({
+      x: Math.min(start.x, end.x),
+      y: Math.min(start.y, end.y),
+      width: Math.abs(end.x - start.x),
+      height: Math.abs(end.y - start.y),
+    }));
   };
 
   const syncCropRectFromNode = (node: any, sourceRect: ImageCrop) => {
@@ -1353,11 +1362,30 @@ export default function Board() {
                 y={cropRect.y}
                 width={cropRect.width}
                 height={cropRect.height}
-                draggable
+                draggable={!isCropRectFullImage()}
                 stroke="#7c3aed"
                 strokeWidth={2}
                 dash={[8, 6]}
                 fill="rgba(124,58,237,0.08)"
+                onPointerDown={(e) => {
+                  if (!isCropRectFullImage()) return;
+                  const pos = getRelativePointerPosition(e.target.getStage());
+                  if (!pos) return;
+                  e.cancelBubble = true;
+                  startCropSelection(pos);
+                }}
+                onPointerMove={(e) => {
+                  if (!cropSelectionStart.current) return;
+                  const pos = getRelativePointerPosition(e.target.getStage());
+                  if (!pos) return;
+                  e.cancelBubble = true;
+                  updateCropSelection(pos);
+                }}
+                onPointerUp={(e) => {
+                  if (!cropSelectionStart.current) return;
+                  e.cancelBubble = true;
+                  cropSelectionStart.current = null;
+                }}
                 onDragMove={(e) => {
                   handleNodeEdgeDrag(e, e.currentTarget);
                   const nextRect = clampCropRect({ ...cropRect, x: e.currentTarget.x(), y: e.currentTarget.y() });
