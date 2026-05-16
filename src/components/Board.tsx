@@ -1011,6 +1011,8 @@ export default function Board() {
     const straightness = directDistance / Math.max(1, pathLength);
     const density = pathLength / Math.max(1, diagonal);
     if (diagonal < 22 || straightness > 0.62) return false;
+    const turns = getSharpTurnCount(points);
+    if (turns < 6) return false;
     const isChaoticScribble = pathLength > 90 && (
       straightness < 0.42 ||
       (duration < 760 && density > 2.25 && pointCount > 14) ||
@@ -1018,6 +1020,28 @@ export default function Board() {
     );
 
     return isChaoticScribble;
+  };
+
+  const getSharpTurnCount = (points: number[]) => {
+    const list = getPointList(points);
+    if (list.length < 4) return 0;
+
+    const angles: number[] = [];
+    for (let index = 1; index < list.length; index += 1) {
+      const previous = list[index - 1];
+      const current = list[index];
+      const length = getPointDistance(previous.x, previous.y, current.x, current.y);
+      if (length < 5) continue;
+      angles.push(Math.atan2(current.y - previous.y, current.x - previous.x));
+    }
+
+    let turns = 0;
+    for (let index = 1; index < angles.length; index += 1) {
+      let delta = Math.abs(angles[index] - angles[index - 1]);
+      if (delta > Math.PI) delta = (Math.PI * 2) - delta;
+      if (delta > 1.25) turns += 1;
+    }
+    return turns;
   };
 
   const scheduleSmartDrawing = () => {

@@ -7,9 +7,7 @@ import { useBoardStore } from '../store/useBoardStore';
 const getBoardAnswersUrl = () => {
   const params = new URLSearchParams(window.location.search);
   const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
-  const normalizedApi = window.location.protocol === 'https:' && api.includes('koreporeczki.cba.pl')
-    ? 'https://core-czki.pl/uczen/board_api.php'
-    : window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
+  const normalizedApi = window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
   const url = new URL(normalizedApi, window.location.href);
   url.searchParams.set('action', 'test_answers');
   return url.toString();

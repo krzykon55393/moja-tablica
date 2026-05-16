@@ -416,7 +416,7 @@ export default function PdfSidePanel() {
 
     const response = await fetch(url.toString(), {
       method: 'POST',
-      credentials: 'include',
+      credentials: 'omit',
       body: formData,
     });
     const data = await response.json();
@@ -436,7 +436,14 @@ export default function PdfSidePanel() {
     setIsLoading(true);
 
     try {
-      const serverUrl = driveAccessToken ? '' : await uploadMaterialToServer(file);
+      let serverUrl = '';
+      if (!driveAccessToken) {
+        try {
+          serverUrl = await uploadMaterialToServer(file);
+        } catch (uploadError) {
+          console.warn('Nie udało się zapisać materiału na serwerze, importuję lokalnie.', uploadError);
+        }
+      }
 
       if (file.type.startsWith('image/')) {
         const src = await new Promise<string>((resolve, reject) => {
