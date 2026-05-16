@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import http from 'node:http';
+import https from 'node:https';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,10 +17,17 @@ const ALLOWED_HOSTS = new Set([
   'core-czki.pl',
   'www.core-czki.pl',
   'koreporeczki.cba.pl',
+  'www.koreporeczki.cba.pl',
   'moja-tablica.vercel.app',
   'localhost',
   '127.0.0.1',
 ]);
+
+type AiBackendResponse = {
+  status?: string;
+  answer?: string;
+  message?: string;
+};
 
 const asString = (value: unknown) => (typeof value === 'string' ? value : '');
 
@@ -43,41 +52,79 @@ const normalizeBoardApiUrl = (rawApiUrl: unknown) => {
 };
 
 const getAiEndpointUrls = (apiUrl: URL) => {
-  const boardApiUrl = new URL(apiUrl.toString());
-  boardApiUrl.searchParams.set('action', 'ai_solve');
+  const bases = [apiUrl];
+  if (apiUrl.hostname !== 'core-czki.pl') {
+    bases.push(new URL(DEFAULT_BOARD_API_URL));
+  }
 
-  const legacyAiUrl = new URL(boardApiUrl.toString());
-  legacyAiUrl.pathname = legacyAiUrl.pathname.replace(/board_api\.php$/i, 'board_ai.php');
-  legacyAiUrl.searchParams.delete('action');
+  const urls = bases.flatMap((baseUrl) => {
+    const boardApiUrl = new URL(baseUrl.toString());
+    boardApiUrl.searchParams.set('action', 'ai_solve');
 
-  return [...new Set([boardApiUrl.toString(), legacyAiUrl.toString()])];
+    const legacyAiUrl = new URL(boardApiUrl.toString());
+    legacyAiUrl.pathname = legacyAiUrl.pathname.replace(/board_api\.php$/i, 'board_ai.php');
+    legacyAiUrl.searchParams.delete('action');
+
+    return [boardApiUrl.toString(), legacyAiUrl.toString()];
+  });
+
+  return [...new Set(urls)];
 };
 
-const readJsonOrText = async (response: Response) => {
-  const text = await response.text();
+const parseBackendResponse = (text: string): AiBackendResponse | null => {
   if (!text.trim()) return null;
   try {
-    return JSON.parse(text) as { status?: string; answer?: string; message?: string };
+    return JSON.parse(text) as AiBackendResponse;
   } catch {
     return { status: 'error', message: text.slice(0, 500) };
   }
 };
 
-const postToAiEndpoint = async (url: string, body: Record<string, string>) => {
-  const response = await fetch(url, {
+const postJsonViaNode = (urlString: string, body: Record<string, string>) => new Promise<AiBackendResponse | null>((resolve, reject) => {
+  const url = new URL(urlString);
+  const payload = JSON.stringify(body);
+  const client = url.protocol === 'https:' ? https : http;
+  const options: http.RequestOptions & { rejectUnauthorized?: boolean } = {
     method: 'POST',
+    family: 4,
+    timeout: 55000,
     headers: {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(payload),
+      'User-Agent': 'moja-tablica-ai-proxy/1.0',
     },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-    signal: AbortSignal.timeout(55000),
-  });
-  const data = await readJsonOrText(response);
-  if (!response.ok || data?.status !== 'success') {
-    throw new Error(data?.message || `Backend AI zwrócił błąd ${response.status}.`);
+  };
+
+  if (url.protocol === 'https:') {
+    options.rejectUnauthorized = false;
   }
+
+  const request = client.request(url, options, (response) => {
+    const chunks: Buffer[] = [];
+    response.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    response.on('end', () => {
+      const data = parseBackendResponse(Buffer.concat(chunks).toString('utf8'));
+      if ((response.statusCode || 500) >= 400) {
+        reject(new Error(data?.message || `Backend AI zwrócił błąd ${response.statusCode}.`));
+        return;
+      }
+      resolve(data);
+    });
+  });
+
+  request.on('timeout', () => request.destroy(new Error('Przekroczono czas oczekiwania na backend AI.')));
+  request.on('error', reject);
+  request.write(payload);
+  request.end();
+});
+
+const postToAiEndpoint = async (url: string, body: Record<string, string>) => {
+  const data = await postJsonViaNode(url, body);
+  if (data?.status !== 'success') {
+    throw new Error(data?.message || 'Backend AI nie zwrócił poprawnej odpowiedzi.');
+  }
+
   return String(data.answer || '').trim();
 };
 
