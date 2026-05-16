@@ -526,14 +526,21 @@ export default function Board() {
   const shouldDiscardQuickScribble = (points: number[]) => {
     if (points.length < 4 || activeTool === 'highlight') return false;
     const duration = Date.now() - drawingStartTime.current;
-    if (duration > 460) return false;
+    if (duration > 1100) return false;
 
     const pathLength = getPathLength(points);
     const directDistance = getPointDistance(points[0], points[1], points[points.length - 2], points[points.length - 1]);
     const bounds = getDrawingBounds(points);
     const diagonal = Math.hypot(bounds.width, bounds.height);
+    const pointCount = points.length / 2;
+    const straightness = directDistance / Math.max(1, pathLength);
+    const density = pathLength / Math.max(1, diagonal);
     const isTinyMark = pathLength < 18 || diagonal < 10;
-    const isChaoticScribble = pathLength > 90 && directDistance / Math.max(1, pathLength) < 0.42;
+    const isChaoticScribble = pathLength > 90 && (
+      straightness < 0.52 ||
+      (duration < 760 && density > 1.9 && pointCount > 12) ||
+      (duration < 520 && density > 1.45 && pointCount > 8)
+    );
 
     return isTinyMark || isChaoticScribble;
   };
