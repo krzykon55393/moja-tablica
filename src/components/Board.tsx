@@ -110,6 +110,17 @@ export default function Board() {
   const cropRectRef = useRef<any>(null);
   const stageRef = useRef<any>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const stagePosRef = useRef(stagePos);
+  const stageScaleRef = useRef(stageScale);
+  const activeToolRef = useRef(activeTool);
+  const touchPointers = useRef(new Map<number, { x: number; y: number }>());
+  const touchPan = useRef<{ pointerId: number; startX: number; startY: number; startStagePos: { x: number; y: number } } | null>(null);
+  const pinchGesture = useRef<{
+    initialDistance: number;
+    initialScale: number;
+    initialStagePos: { x: number; y: number };
+    initialCenter: { x: number; y: number };
+  } | null>(null);
   const selectedImage = images.find((img) => img.id === selectedId) || null;
   const isCropping = !!cropImageId && !!cropRect;
   const edgePanState = useRef({ x: 0, y: 0 });
@@ -123,6 +134,19 @@ export default function Board() {
   const eraseHistoryRecorded = useRef(false);
   const aiSelectionStart = useRef<{ x: number; y: number } | null>(null);
   const cropSelectionStart = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    stagePosRef.current = stagePos;
+    edgePanState.current = stagePos;
+  }, [stagePos]);
+
+  useEffect(() => {
+    stageScaleRef.current = stageScale;
+  }, [stageScale]);
+
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+  }, [activeTool]);
 
   useEffect(() => {
     setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -400,6 +424,124 @@ export default function Board() {
     return () => window.removeEventListener('paste', handlePaste);
   }, [addImage, cursorPosition, stagePos.x, stagePos.y, stageScale]);
 
+  useEffect(() => {
+    const stage = stageRef.current;
+    const container = stage?.container();
+    if (!container) return;
+
+    const getDistance = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+    const getCenter = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+    });
+
+    const startPinchIfReady = () => {
+      const points = Array.from(touchPointers.current.values());
+      if (points.length < 2) return;
+      const [first, second] = points;
+      pinchGesture.current = {
+        initialDistance: Math.max(1, getDistance(first, second)),
+        initialScale: stageScaleRef.current,
+        initialStagePos: stagePosRef.current,
+        initialCenter: getCenter(first, second),
+      };
+      touchPan.current = null;
+      if (isDrawing.current && drawingLineId.current) {
+        const lineId = drawingLineId.current;
+        setLines((prev: any) => prev.filter((line: any) => line.id !== lineId), { record: false });
+        isDrawing.current = false;
+        drawingLineId.current = null;
+        rawDrawingPoints.current = [];
+      }
+    };
+
+    const handleNativePointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+      touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (touchPointers.current.size >= 2) {
+        event.preventDefault();
+        startPinchIfReady();
+        return;
+      }
+
+      if (shouldUseTouchPan(event)) {
+        event.preventDefault();
+        touchPan.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          startStagePos: stagePosRef.current,
+        };
+      }
+    };
+
+    const handleNativePointerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch' || !touchPointers.current.has(event.pointerId)) return;
+      touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (pinchGesture.current && touchPointers.current.size >= 2) {
+        event.preventDefault();
+        const points = Array.from(touchPointers.current.values());
+        const [first, second] = points;
+        const gesture = pinchGesture.current;
+        const center = getCenter(first, second);
+        const distance = getDistance(first, second);
+        const nextScale = Math.max(0.25, Math.min(3, gesture.initialScale * (distance / gesture.initialDistance)));
+        const boardCenter = {
+          x: (gesture.initialCenter.x - gesture.initialStagePos.x) / gesture.initialScale,
+          y: (gesture.initialCenter.y - gesture.initialStagePos.y) / gesture.initialScale,
+        };
+        const nextPos = {
+          x: center.x - boardCenter.x * nextScale,
+          y: center.y - boardCenter.y * nextScale,
+        };
+        stageScaleRef.current = nextScale;
+        stagePosRef.current = nextPos;
+        edgePanState.current = nextPos;
+        setStageScale(nextScale);
+        setStagePos(nextPos);
+        return;
+      }
+
+      if (touchPan.current && touchPan.current.pointerId === event.pointerId) {
+        event.preventDefault();
+        const nextPos = {
+          x: touchPan.current.startStagePos.x + event.clientX - touchPan.current.startX,
+          y: touchPan.current.startStagePos.y + event.clientY - touchPan.current.startY,
+        };
+        stagePosRef.current = nextPos;
+        edgePanState.current = nextPos;
+        setStagePos(nextPos);
+      }
+    };
+
+    const handleNativePointerEnd = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+      touchPointers.current.delete(event.pointerId);
+      if (touchPan.current?.pointerId === event.pointerId) touchPan.current = null;
+      if (touchPointers.current.size < 2) pinchGesture.current = null;
+    };
+
+    const preventGesture = (event: Event) => event.preventDefault();
+
+    container.addEventListener('pointerdown', handleNativePointerDown, { passive: false });
+    container.addEventListener('pointermove', handleNativePointerMove, { passive: false });
+    container.addEventListener('pointerup', handleNativePointerEnd, { passive: false });
+    container.addEventListener('pointercancel', handleNativePointerEnd, { passive: false });
+    window.addEventListener('gesturestart', preventGesture, { passive: false });
+    window.addEventListener('gesturechange', preventGesture, { passive: false });
+
+    return () => {
+      container.removeEventListener('pointerdown', handleNativePointerDown);
+      container.removeEventListener('pointermove', handleNativePointerMove);
+      container.removeEventListener('pointerup', handleNativePointerEnd);
+      container.removeEventListener('pointercancel', handleNativePointerEnd);
+      window.removeEventListener('gesturestart', preventGesture);
+      window.removeEventListener('gesturechange', preventGesture);
+    };
+  }, [setLines, setStagePos, setStageScale, windowSize.width]);
+
   const getRelativePointerPosition = (stage: any) => {
     const pointerPosition = stage.getPointerPosition();
     if (!pointerPosition) return null;
@@ -407,6 +549,22 @@ export default function Board() {
       x: (pointerPosition.x - stage.x()) / stageScale,
       y: (pointerPosition.y - stage.y()) / stageScale,
     };
+  };
+
+  const getBoardPointFromClient = (clientX: number, clientY: number) => {
+    const stage = stageRef.current;
+    const rect = stage?.container().getBoundingClientRect();
+    if (!stage || !rect) return null;
+    return {
+      x: (clientX - rect.left - stage.x()) / stageScaleRef.current,
+      y: (clientY - rect.top - stage.y()) / stageScaleRef.current,
+    };
+  };
+
+  const shouldUseTouchPan = (event: PointerEvent) => {
+    if (event.pointerType !== 'touch') return false;
+    if (windowSize.width < 700) return false;
+    return activeToolRef.current === 'draw' || activeToolRef.current === 'highlight' || activeToolRef.current === 'erase';
   };
 
   const openTextEditor = (text: TextEditorState) => {
@@ -715,6 +873,7 @@ export default function Board() {
   };
 
   const handleStagePointerDown = (e: any) => {
+    if (e.evt?.pointerType === 'touch' && shouldUseTouchPan(e.evt)) return;
     const stage = e.target.getStage();
     const clickedOn = e.target;
     const pos = getRelativePointerPosition(stage);
@@ -813,6 +972,7 @@ export default function Board() {
   };
 
   const handlePointerMove = (e: any) => {
+    if (e.evt?.pointerType === 'touch' && (touchPan.current || pinchGesture.current)) return;
     const stage = e.target.getStage();
     const pos = getRelativePointerPosition(stage);
 
@@ -862,7 +1022,17 @@ export default function Board() {
       }
     }
 
-    rawDrawingPoints.current = [...rawDrawingPoints.current, pos.x, pos.y];
+    const coalescedEvents = typeof e.evt?.getCoalescedEvents === 'function' ? e.evt.getCoalescedEvents() : [];
+    const inputPoints = coalescedEvents.length > 1
+      ? coalescedEvents
+        .map((event: PointerEvent) => getBoardPointFromClient(event.clientX, event.clientY))
+        .filter(Boolean) as { x: number; y: number }[]
+      : [pos];
+
+    rawDrawingPoints.current = [
+      ...rawDrawingPoints.current,
+      ...inputPoints.flatMap((point) => [point.x, point.y]),
+    ];
 
     setLines((prev: any) => {
       const newLines = [...prev];
@@ -1287,7 +1457,7 @@ export default function Board() {
       <Stage
         ref={stageRef}
         width={windowSize.width} height={windowSize.height} x={stagePos.x} y={stagePos.y} scaleX={stageScale} scaleY={stageScale}
-        draggable={activeTool === 'pan'} onDragMove={handleDragStage} onWheel={handleWheel} onPointerDown={handleStagePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}
+        draggable={activeTool === 'pan'} onDragMove={handleDragStage} onWheel={handleWheel} onPointerDown={handleStagePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
       >
         <Layer>
           <Rect
