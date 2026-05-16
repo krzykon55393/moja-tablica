@@ -1,7 +1,7 @@
 'use client';
 
 import { Stage, Layer, Line, Image as KonvaImage, Rect, Ellipse, Transformer, Path, Arrow, Group, Circle, Text as KonvaText } from 'react-konva';
-import { ImageCrop, ImageData, useBoardStore } from '../store/useBoardStore';
+import { ImageCrop, ImageData, LineData, ShapeData, TextData, useBoardStore } from '../store/useBoardStore';
 import { getShapePath } from '../lib/shapeGeometry';
 import { fitImageToViewport } from '../lib/imageSizing';
 import { useEffect, useState, useRef, type ReactNode } from 'react';
@@ -87,14 +87,21 @@ type AiSelectionRect = {
   height: number;
 };
 
+type BoardRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export default function Board() {
   const {
     activeTool, bgColor, lines, setLines, grid, dots, theme,
     stagePos, setStagePos, stageScale, setStageScale, images, shapes, texts,
     strokeColor, strokeWidth, strokeOpacity, strokeDash,
     pendingPlacementImage, setPendingPlacementImage,
-    addImage, updateImage, updateShape, addText, updateText, selectedId, setSelectedId, cursorPosition, setCursorPosition,
-    setAiCapture, uiScale, deleteSelected, undo, redo
+    addImage, updateImage, updateShape, addText, updateText, selectedId, setSelectedId, selectedIds, setSelectedIds, cursorPosition, setCursorPosition,
+    setAiCapture, uiScale, deleteSelected, deleteElements, undo, redo
   } = useBoardStore();
 
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
@@ -104,6 +111,7 @@ export default function Board() {
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
   const [textFormat, setTextFormat] = useState({ fontSize: 28, bold: false, italic: false });
   const [aiSelectionRect, setAiSelectionRect] = useState<AiSelectionRect | null>(null);
+  const [selectionRect, setSelectionRect] = useState<BoardRect | null>(null);
   const isDrawing = useRef(false);
   const trRef = useRef<any>(null);
   const cropTrRef = useRef<any>(null);
@@ -133,6 +141,12 @@ export default function Board() {
   const drawingStartTime = useRef(0);
   const eraseHistoryRecorded = useRef(false);
   const aiSelectionStart = useRef<{ x: number; y: number } | null>(null);
+  const selectionStart = useRef<{ x: number; y: number } | null>(null);
+  const multiDragStart = useRef<{
+    pointer: { x: number; y: number };
+    positions: Record<string, { x: number; y: number }>;
+    linePoints: Record<string, number[]>;
+  } | null>(null);
   const cropSelectionStart = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -311,10 +325,13 @@ export default function Board() {
   // OBSŁUGA RAMKI (TRANSFORMERA)
   useEffect(() => {
     if (trRef.current) {
-      if (selectedId) {
-        const selectedNode = trRef.current.getStage().findOne((node: any) => node.id() === selectedId);
-        if (selectedNode) {
-          trRef.current.nodes([selectedNode]);
+      const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+      if (ids.length) {
+        const selectedNodes = ids
+          .map((id) => trRef.current.getStage().findOne((node: any) => node.id() === id))
+          .filter(Boolean);
+        if (selectedNodes.length) {
+          trRef.current.nodes(selectedNodes);
           trRef.current.getLayer().batchDraw();
         } else {
           trRef.current.nodes([]);
@@ -325,7 +342,7 @@ export default function Board() {
         trRef.current.getLayer().batchDraw();
       }
     }
-  }, [selectedId, shapes, images, texts]);
+  }, [selectedId, selectedIds, shapes, images, texts]);
 
   useEffect(() => {
     if (cropTrRef.current && cropRectRef.current && cropRect) {
@@ -709,6 +726,192 @@ export default function Board() {
     };
   };
 
+  const normalizeRect = (rect: BoardRect): BoardRect => ({
+    x: rect.width < 0 ? rect.x + rect.width : rect.x,
+    y: rect.height < 0 ? rect.y + rect.height : rect.y,
+    width: Math.abs(rect.width),
+    height: Math.abs(rect.height),
+  });
+
+  const inflateRect = (rect: BoardRect, amount: number): BoardRect => ({
+    x: rect.x - amount,
+    y: rect.y - amount,
+    width: rect.width + amount * 2,
+    height: rect.height + amount * 2,
+  });
+
+  const rectsOverlap = (a: BoardRect, b: BoardRect) => (
+    a.x <= b.x + b.width &&
+    a.x + a.width >= b.x &&
+    a.y <= b.y + b.height &&
+    a.y + a.height >= b.y
+  );
+
+  const getLineBounds = (line: LineData): BoardRect | null => {
+    if (line.points.length < 2) return null;
+    const bounds = getDrawingBounds(line.points);
+    return inflateRect({
+      x: bounds.minX,
+      y: bounds.minY,
+      width: bounds.width,
+      height: bounds.height,
+    }, Math.max(12, (line.strokeWidth || 3) * 2));
+  };
+
+  const getTextBounds = (text: TextData): BoardRect => inflateRect({
+    x: text.x,
+    y: text.y,
+    width: text.width,
+    height: text.fontSize * Math.max(1.3, text.text.split('\n').length * 1.22),
+  }, 10);
+
+  const getShapeBounds = (shape: ShapeData): BoardRect => inflateRect({
+    x: shape.x,
+    y: shape.y,
+    width: shape.width,
+    height: shape.height,
+  }, 12);
+
+  const getImageBounds = (image: ImageData): BoardRect => ({
+    x: image.x,
+    y: image.y,
+    width: image.width,
+    height: image.height,
+  });
+
+  const getElementBounds = (id: string): BoardRect | null => {
+    const line = lines.find((item) => item.id === id);
+    if (line) return getLineBounds(line);
+    const text = texts.find((item) => item.id === id);
+    if (text) return getTextBounds(text);
+    const shape = shapes.find((item) => item.id === id);
+    if (shape) return getShapeBounds(shape);
+    const image = images.find((item) => item.id === id);
+    if (image) return getImageBounds(image);
+    return null;
+  };
+
+  const getSelectionBounds = (ids = selectedIds): BoardRect | null => {
+    const bounds = ids
+      .map(getElementBounds)
+      .filter(Boolean) as BoardRect[];
+    if (!bounds.length) return null;
+    const minX = Math.min(...bounds.map((box) => box.x));
+    const minY = Math.min(...bounds.map((box) => box.y));
+    const maxX = Math.max(...bounds.map((box) => box.x + box.width));
+    const maxY = Math.max(...bounds.map((box) => box.y + box.height));
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  };
+
+  const getIdsInRect = (rect: BoardRect) => {
+    const area = normalizeRect(rect);
+    const ids: string[] = [];
+    lines.forEach((line) => {
+      const bounds = getLineBounds(line);
+      if (bounds && rectsOverlap(area, bounds)) ids.push(line.id);
+    });
+    texts.forEach((text) => {
+      if (rectsOverlap(area, getTextBounds(text))) ids.push(text.id);
+    });
+    shapes.forEach((shape) => {
+      if (rectsOverlap(area, getShapeBounds(shape))) ids.push(shape.id);
+    });
+    images.forEach((image) => {
+      if (rectsOverlap(area, getImageBounds(image))) ids.push(image.id);
+    });
+    return ids;
+  };
+
+  const getDistanceToSegment = (
+    point: { x: number; y: number },
+    start: { x: number; y: number },
+    end: { x: number; y: number }
+  ) => {
+    const lengthSquared = ((end.x - start.x) ** 2) + ((end.y - start.y) ** 2);
+    if (!lengthSquared) return getPointDistance(point.x, point.y, start.x, start.y);
+    const t = Math.max(0, Math.min(1, (((point.x - start.x) * (end.x - start.x)) + ((point.y - start.y) * (end.y - start.y))) / lengthSquared));
+    return getPointDistance(point.x, point.y, start.x + t * (end.x - start.x), start.y + t * (end.y - start.y));
+  };
+
+  const isLineHitByPoints = (line: LineData, scribblePoints: { x: number; y: number }[], tolerance = 18) => {
+    const linePoints = getPointList(line.points);
+    if (linePoints.length < 2 || !scribblePoints.length) return false;
+    for (const point of scribblePoints) {
+      for (let index = 1; index < linePoints.length; index += 1) {
+        if (getDistanceToSegment(point, linePoints[index - 1], linePoints[index]) <= tolerance) return true;
+      }
+    }
+    return false;
+  };
+
+  const getElementsHitByScribble = (points: number[]) => {
+    if (points.length < 4) return [];
+    const scribblePoints = getPointList(points);
+    const scribbleBoundsRaw = getDrawingBounds(points);
+    const scribbleBounds = inflateRect({
+      x: scribbleBoundsRaw.minX,
+      y: scribbleBoundsRaw.minY,
+      width: scribbleBoundsRaw.width,
+      height: scribbleBoundsRaw.height,
+    }, 16);
+    const hitIds = new Set<string>();
+    lines.forEach((line) => {
+      if (line.id !== drawingLineId.current && rectsOverlap(scribbleBounds, getLineBounds(line) || scribbleBounds) && isLineHitByPoints(line, scribblePoints)) {
+        hitIds.add(line.id);
+      }
+    });
+    texts.forEach((text) => {
+      const bounds = getTextBounds(text);
+      if (rectsOverlap(scribbleBounds, bounds) && scribblePoints.some((point) => rectsOverlap({ x: point.x, y: point.y, width: 1, height: 1 }, bounds))) {
+        hitIds.add(text.id);
+      }
+    });
+    shapes.forEach((shape) => {
+      const bounds = getShapeBounds(shape);
+      if (rectsOverlap(scribbleBounds, bounds) && scribblePoints.some((point) => rectsOverlap({ x: point.x, y: point.y, width: 1, height: 1 }, bounds))) {
+        hitIds.add(shape.id);
+      }
+    });
+    images.forEach((image) => {
+      const bounds = getImageBounds(image);
+      if (rectsOverlap(scribbleBounds, bounds) && scribblePoints.some((point) => rectsOverlap({ x: point.x, y: point.y, width: 1, height: 1 }, bounds))) {
+        hitIds.add(image.id);
+      }
+    });
+    return [...hitIds];
+  };
+
+  const moveSelectedElements = (delta: { x: number; y: number }) => {
+    const ids = selectedIds;
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    const start = multiDragStart.current?.positions || {};
+    const startLinePoints = multiDragStart.current?.linePoints || {};
+    useBoardStore.setState((state) => ({
+      lines: state.lines.map((line) => {
+        if (!idSet.has(line.id)) return line;
+        const originalPoints = startLinePoints[line.id];
+        if (!originalPoints) return line;
+        return {
+          ...line,
+          points: originalPoints.map((value, index) => value + (index % 2 === 0 ? delta.x : delta.y)),
+        };
+      }),
+      texts: state.texts.map((text) => {
+        const origin = start[text.id];
+        return origin ? { ...text, x: origin.x + delta.x, y: origin.y + delta.y } : text;
+      }),
+      images: state.images.map((image) => {
+        const origin = start[image.id];
+        return origin ? { ...image, x: origin.x + delta.x, y: origin.y + delta.y } : image;
+      }),
+      shapes: state.shapes.map((shape) => {
+        const origin = start[shape.id];
+        return origin ? { ...shape, x: origin.x + delta.x, y: origin.y + delta.y } : shape;
+      }),
+    }));
+  };
+
   const isClosedDrawing = (points: number[]) => {
     if (points.length < 20) return false;
     const bounds = getDrawingBounds(points);
@@ -807,14 +1010,13 @@ export default function Board() {
     const pointCount = points.length / 2;
     const straightness = directDistance / Math.max(1, pathLength);
     const density = pathLength / Math.max(1, diagonal);
-    const isTinyMark = pathLength < 18 || diagonal < 10;
     const isChaoticScribble = pathLength > 90 && (
       straightness < 0.52 ||
       (duration < 760 && density > 1.9 && pointCount > 12) ||
       (duration < 520 && density > 1.45 && pointCount > 8)
     );
 
-    return isTinyMark || isChaoticScribble;
+    return isChaoticScribble;
   };
 
   const scheduleSmartDrawing = () => {
@@ -870,6 +1072,51 @@ export default function Board() {
         y: node.y() - delta.y / stageScale,
       });
     });
+  };
+
+  const getSelectedStartPositions = (ids: string[]) => {
+    const idSet = new Set(ids);
+    const positions: Record<string, { x: number; y: number }> = {};
+    const linePoints: Record<string, number[]> = {};
+    lines.forEach((line) => {
+      if (idSet.has(line.id)) {
+        positions[line.id] = { x: line.points[0] || 0, y: line.points[1] || 0 };
+        linePoints[line.id] = [...line.points];
+      }
+    });
+    texts.forEach((text) => {
+      if (idSet.has(text.id)) positions[text.id] = { x: text.x, y: text.y };
+    });
+    images.forEach((image) => {
+      if (idSet.has(image.id)) positions[image.id] = { x: image.x, y: image.y };
+    });
+    shapes.forEach((shape) => {
+      if (idSet.has(shape.id)) positions[shape.id] = { x: shape.x, y: shape.y };
+    });
+    return { positions, linePoints };
+  };
+
+  const beginMultiDrag = (point: { x: number; y: number }) => {
+    if (selectedIds.length < 2) return;
+    setLines((prev: any) => prev);
+    const start = getSelectedStartPositions(selectedIds);
+    multiDragStart.current = {
+      pointer: point,
+      positions: start.positions,
+      linePoints: start.linePoints,
+    };
+  };
+
+  const updateMultiDrag = (point: { x: number; y: number }) => {
+    if (!multiDragStart.current) return;
+    moveSelectedElements({
+      x: point.x - multiDragStart.current.pointer.x,
+      y: point.y - multiDragStart.current.pointer.y,
+    });
+  };
+
+  const finishMultiDrag = () => {
+    multiDragStart.current = null;
   };
 
   const handleStagePointerDown = (e: any) => {
@@ -931,6 +1178,13 @@ export default function Board() {
       return;
     }
 
+    if (activeTool === 'select' && clickedOnBoard && pos) {
+      selectionStart.current = pos;
+      setSelectedIds([]);
+      setSelectionRect({ x: pos.x, y: pos.y, width: 0, height: 0 });
+      return;
+    }
+
     // Kliknięcie w pustą tablicę odznacza figury
     if (clickedOnBoard) {
       setSelectedId(null);
@@ -987,9 +1241,25 @@ export default function Board() {
 
     if (pos) setCursorPosition(pos);
 
+    if (multiDragStart.current && pos) {
+      updateMultiDrag(pos);
+      return;
+    }
+
     if (activeTool === 'ai' && aiSelectionStart.current && pos) {
       const start = aiSelectionStart.current;
       setAiSelectionRect({
+        x: Math.min(start.x, pos.x),
+        y: Math.min(start.y, pos.y),
+        width: Math.abs(pos.x - start.x),
+        height: Math.abs(pos.y - start.y),
+      });
+      return;
+    }
+
+    if (activeTool === 'select' && selectionStart.current && pos) {
+      const start = selectionStart.current;
+      setSelectionRect({
         x: Math.min(start.x, pos.x),
         y: Math.min(start.y, pos.y),
         width: Math.abs(pos.x - start.x),
@@ -1045,8 +1315,23 @@ export default function Board() {
   };
 
   const handlePointerUp = () => {
+    if (multiDragStart.current) {
+      finishMultiDrag();
+      return;
+    }
+
     if (cropSelectionStart.current) {
       cropSelectionStart.current = null;
+      return;
+    }
+
+    if (activeTool === 'select' && selectionStart.current) {
+      const rect = selectionRect;
+      selectionStart.current = null;
+      setSelectionRect(null);
+      if (rect && rect.width > 8 && rect.height > 8) {
+        setSelectedIds(getIdsInRect(rect));
+      }
       return;
     }
 
@@ -1106,7 +1391,10 @@ export default function Board() {
     }
     if (isDrawing.current && drawingLineId.current && shouldDiscardQuickScribble(rawDrawingPoints.current)) {
       const lineId = drawingLineId.current;
-      setLines((prev: any) => prev.filter((line: any) => line.id !== lineId), { record: false });
+      const hitIds = getElementsHitByScribble(rawDrawingPoints.current);
+      if (hitIds.length) {
+        deleteElements([lineId, ...hitIds]);
+      }
       isDrawing.current = false;
       drawingLineId.current = null;
       rawDrawingPoints.current = [];
@@ -1115,7 +1403,7 @@ export default function Board() {
       drawingStartTime.current = 0;
       smartDrawing.current = false;
       eraseHistoryRecorded.current = false;
-      return;
+      if (hitIds.length) return;
     }
     if (activeTool !== 'highlight' && smartDrawing.current && isDrawing.current && drawingLineId.current && rawDrawingPoints.current.length >= 4) {
       const lineId = drawingLineId.current;
@@ -1681,6 +1969,20 @@ export default function Board() {
             />
           )}
 
+          {activeTool === 'select' && selectionRect && (
+            <Rect
+              x={selectionRect.x}
+              y={selectionRect.y}
+              width={selectionRect.width}
+              height={selectionRect.height}
+              fill="rgba(124,58,237,0.10)"
+              stroke="#7c3aed"
+              strokeWidth={2}
+              dash={[9, 7]}
+              listening={false}
+            />
+          )}
+
           {lines.map((line) => (
             <Line
               key={line.id}
@@ -1699,7 +2001,58 @@ export default function Board() {
             />
           ))}
 
-          {activeTool === 'select' && (
+          {activeTool === 'select' && selectedIds.length > 1 && (() => {
+            const bounds = getSelectionBounds();
+            if (!bounds) return null;
+            return (
+              <Rect
+                x={bounds.x}
+                y={bounds.y}
+                width={bounds.width}
+                height={bounds.height}
+                fill="rgba(124,58,237,0.04)"
+                stroke="#7c3aed"
+                strokeWidth={2}
+                dash={[10, 7]}
+                draggable
+                onPointerDown={(e) => {
+                  const pos = getRelativePointerPosition(e.target.getStage());
+                  if (!pos) return;
+                  e.cancelBubble = true;
+                  beginMultiDrag(pos);
+                }}
+                onPointerMove={(e) => {
+                  if (!multiDragStart.current) return;
+                  const pos = getRelativePointerPosition(e.target.getStage());
+                  if (!pos) return;
+                  e.cancelBubble = true;
+                  updateMultiDrag(pos);
+                  e.currentTarget.position({ x: bounds.x, y: bounds.y });
+                }}
+                onPointerUp={(e) => {
+                  e.cancelBubble = true;
+                  e.currentTarget.position({ x: bounds.x, y: bounds.y });
+                  finishMultiDrag();
+                }}
+                onDragStart={(e) => {
+                  const pos = getRelativePointerPosition(e.target.getStage()) || { x: e.currentTarget.x(), y: e.currentTarget.y() };
+                  beginMultiDrag(pos);
+                }}
+                onDragMove={(e) => {
+                  const pos = getRelativePointerPosition(e.target.getStage());
+                  if (!pos) return;
+                  updateMultiDrag(pos);
+                  e.currentTarget.position({ x: bounds.x, y: bounds.y });
+                }}
+                onDragEnd={(e) => {
+                  e.currentTarget.position({ x: bounds.x, y: bounds.y });
+                  finishMultiDrag();
+                }}
+              />
+            );
+          })()}
+
+          {activeTool === 'select' && selectedIds.length <= 1 && (
             <Transformer
               ref={trRef}
               rotateEnabled={true}

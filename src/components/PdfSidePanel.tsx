@@ -101,9 +101,6 @@ const getBoardApiUrl = () => {
   if (typeof window === 'undefined') return DEFAULT_BOARD_API_URL;
   const params = new URLSearchParams(window.location.search);
   const rawApiUrl = params.get('api') || DEFAULT_BOARD_API_URL;
-  if (window.location.protocol === 'https:' && rawApiUrl.includes('koreporeczki.cba.pl')) {
-    return 'https://core-czki.pl/uczen/board_api.php';
-  }
   return window.location.protocol === 'https:' && rawApiUrl.startsWith('http://')
     ? rawApiUrl.replace(/^http:\/\//, 'https://')
     : rawApiUrl;
@@ -510,8 +507,9 @@ export default function PdfSidePanel() {
         sourceType: driveAccessToken ? 'drive' : 'server',
         pages,
       });
-    } catch {
-      alert('Nie udało się zaimportować pliku. Sprawdź, czy na serwerze jest aktualny /uczen/board_api.php i czy PDF.js się ładuje.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Nieznany błąd importu.';
+      alert(`Nie udało się zaimportować pliku: ${message}`);
     } finally {
       setIsLoading(false);
     }

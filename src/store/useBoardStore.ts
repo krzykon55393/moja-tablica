@@ -151,7 +151,10 @@ interface BoardState {
   
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
+  selectedIds: string[];
+  setSelectedIds: (ids: string[]) => void;
   deleteSelected: () => void;
+  deleteElements: (ids: string[], options?: HistoryOptions) => void;
   past: HistorySnapshot[];
   future: HistorySnapshot[];
   canUndo: boolean;
@@ -266,16 +269,34 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     shapes: state.shapes.map((s) => s.id === id ? { ...s, ...newData } : s)
   })),
   selectedId: null,
-  setSelectedId: (id) => set({ selectedId: id }),
+  selectedIds: [],
+  setSelectedId: (id) => set({ selectedId: id, selectedIds: id ? [id] : [] }),
+  setSelectedIds: (ids) => set({ selectedIds: ids, selectedId: ids.length === 1 ? ids[0] : null }),
   deleteSelected: () => set((state) => {
-    if (!state.selectedId) return state;
+    const ids = state.selectedIds.length ? state.selectedIds : state.selectedId ? [state.selectedId] : [];
+    if (!ids.length) return state;
+    const idSet = new Set(ids);
     return {
       ...withHistory(state),
-      lines: state.lines.filter((line) => line.id !== state.selectedId),
-      texts: state.texts.filter((text) => text.id !== state.selectedId),
-      images: state.images.filter((img) => img.id !== state.selectedId),
-      shapes: state.shapes.filter((shape) => shape.id !== state.selectedId),
+      lines: state.lines.filter((line) => !idSet.has(line.id)),
+      texts: state.texts.filter((text) => !idSet.has(text.id)),
+      images: state.images.filter((img) => !idSet.has(img.id)),
+      shapes: state.shapes.filter((shape) => !idSet.has(shape.id)),
       selectedId: null,
+      selectedIds: [],
+    };
+  }),
+  deleteElements: (ids, options = { record: true }) => set((state) => {
+    if (!ids.length) return state;
+    const idSet = new Set(ids);
+    return {
+      ...(options.record === false ? {} : withHistory(state)),
+      lines: state.lines.filter((line) => !idSet.has(line.id)),
+      texts: state.texts.filter((text) => !idSet.has(text.id)),
+      images: state.images.filter((img) => !idSet.has(img.id)),
+      shapes: state.shapes.filter((shape) => !idSet.has(shape.id)),
+      selectedId: idSet.has(state.selectedId || '') ? null : state.selectedId,
+      selectedIds: state.selectedIds.filter((id) => !idSet.has(id)),
     };
   }),
   past: [],
@@ -294,6 +315,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       canUndo: past.length > 0,
       canRedo: true,
       selectedId: null,
+      selectedIds: [],
     };
   }),
   redo: () => set((state) => {
@@ -308,6 +330,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       canUndo: true,
       canRedo: future.length > 0,
       selectedId: null,
+      selectedIds: [],
     };
   }),
   exportBoard: () => {
@@ -344,11 +367,12 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       dots: hasContent ? (data.dots || 'brak') : 'brak',
       theme: data.theme || 'light',
       selectedId: null,
+      selectedIds: [],
       past: [],
       future: [],
       canUndo: false,
       canRedo: false,
     });
   },
-  clearBoard: () => set((state) => ({ ...withHistory(state), lines: [], texts: [], images: [], shapes: [], selectedId: null })),
+  clearBoard: () => set((state) => ({ ...withHistory(state), lines: [], texts: [], images: [], shapes: [], selectedId: null, selectedIds: [] })),
 }));
