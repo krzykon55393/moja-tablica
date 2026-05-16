@@ -1001,7 +1001,7 @@ export default function Board() {
   const shouldDiscardQuickScribble = (points: number[]) => {
     if (points.length < 4 || activeTool === 'highlight') return false;
     const duration = Date.now() - drawingStartTime.current;
-    if (duration > 1100) return false;
+    if (duration > 950) return false;
 
     const pathLength = getPathLength(points);
     const directDistance = getPointDistance(points[0], points[1], points[points.length - 2], points[points.length - 1]);
@@ -1010,10 +1010,11 @@ export default function Board() {
     const pointCount = points.length / 2;
     const straightness = directDistance / Math.max(1, pathLength);
     const density = pathLength / Math.max(1, diagonal);
+    if (diagonal < 22 || straightness > 0.62) return false;
     const isChaoticScribble = pathLength > 90 && (
-      straightness < 0.52 ||
-      (duration < 760 && density > 1.9 && pointCount > 12) ||
-      (duration < 520 && density > 1.45 && pointCount > 8)
+      straightness < 0.42 ||
+      (duration < 760 && density > 2.25 && pointCount > 14) ||
+      (duration < 520 && density > 1.85 && pointCount > 10)
     );
 
     return isChaoticScribble;
@@ -1394,16 +1395,16 @@ export default function Board() {
       const hitIds = getElementsHitByScribble(rawDrawingPoints.current);
       if (hitIds.length) {
         deleteElements([lineId, ...hitIds]);
+        isDrawing.current = false;
+        drawingLineId.current = null;
+        rawDrawingPoints.current = [];
+        drawingStartPoint.current = null;
+        lastDrawingPoint.current = null;
+        drawingStartTime.current = 0;
+        smartDrawing.current = false;
+        eraseHistoryRecorded.current = false;
+        return;
       }
-      isDrawing.current = false;
-      drawingLineId.current = null;
-      rawDrawingPoints.current = [];
-      drawingStartPoint.current = null;
-      lastDrawingPoint.current = null;
-      drawingStartTime.current = 0;
-      smartDrawing.current = false;
-      eraseHistoryRecorded.current = false;
-      if (hitIds.length) return;
     }
     if (activeTool !== 'highlight' && smartDrawing.current && isDrawing.current && drawingLineId.current && rawDrawingPoints.current.length >= 4) {
       const lineId = drawingLineId.current;
@@ -1567,18 +1568,20 @@ export default function Board() {
   const startCropSelection = (point: { x: number; y: number }) => {
     const start = clampPointToSelectedImage(point);
     cropSelectionStart.current = start;
-    setCropRect(clampCropRect({ x: start.x, y: start.y, width: 12, height: 12 }));
   };
 
   const updateCropSelection = (point: { x: number; y: number }) => {
     if (!cropSelectionStart.current || !selectedImage) return;
     const start = cropSelectionStart.current;
     const end = clampPointToSelectedImage(point);
+    const width = Math.abs(end.x - start.x);
+    const height = Math.abs(end.y - start.y);
+    if (width < 6 && height < 6) return;
     setCropRect(clampCropRect({
       x: Math.min(start.x, end.x),
       y: Math.min(start.y, end.y),
-      width: Math.abs(end.x - start.x),
-      height: Math.abs(end.y - start.y),
+      width,
+      height,
     }));
   };
 
@@ -2072,67 +2075,92 @@ export default function Board() {
       </Stage>
       {textEditor && (() => {
         const position = getTextEditorScreenPosition();
+        const editorLeft = Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220));
+        const editorTop = Math.min(Math.max(56, position.top), Math.max(56, windowSize.height - 120));
+        const editorWidth = Math.min(Math.max(220, textEditor.width * stageScale), Math.max(220, windowSize.width - 24));
+        const editorHeight = Math.max(62, Math.min(180, (textAreaRef.current?.scrollHeight || 62) + 4));
+        const toolbarLeft = Math.min(
+          Math.max(12, editorLeft + editorWidth - 164),
+          Math.max(12, windowSize.width - 176)
+        );
+        const toolbarTop = Math.max(8, Math.min(editorTop - 48, windowSize.height - 104));
+        const handleClass = "absolute h-2.5 w-2.5 border border-violet-500 bg-white";
         return (
           <>
             <div
               className="fixed z-[141] flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 text-slate-950 shadow-xl"
               style={{
-                left: Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220)),
-                top: Math.max(8, Math.min(position.top - 48, windowSize.height - 104)),
+                left: toolbarLeft,
+                top: toolbarTop,
                 pointerEvents: 'auto',
               }}
               onPointerDown={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.preventDefault()}
             >
-              <button className="h-9 w-9 rounded-lg text-lg font-semibold hover:bg-slate-100" onClick={() => updateTextFormat({ fontSize: Math.max(10, textFormat.fontSize - 2) })}>-</button>
-              <button className="h-9 w-9 rounded-lg text-lg font-semibold hover:bg-slate-100" onClick={() => updateTextFormat({ fontSize: Math.min(96, textFormat.fontSize + 2) })}>+</button>
-              <button className={`h-9 w-9 rounded-lg text-base font-bold ${textFormat.bold ? 'bg-violet-100 text-violet-700' : 'hover:bg-slate-100'}`} onClick={() => updateTextFormat({ bold: !textFormat.bold })}>B</button>
-              <button className={`h-9 w-9 rounded-lg text-base italic ${textFormat.italic ? 'bg-violet-100 text-violet-700' : 'hover:bg-slate-100'}`} onClick={() => updateTextFormat({ italic: !textFormat.italic })}>I</button>
+              <button className="h-8 w-8 rounded-lg text-base font-semibold hover:bg-slate-100" onClick={() => updateTextFormat({ fontSize: Math.max(10, textFormat.fontSize - 2) })}>-</button>
+              <button className="h-8 w-8 rounded-lg text-base font-semibold hover:bg-slate-100" onClick={() => updateTextFormat({ fontSize: Math.min(96, textFormat.fontSize + 2) })}>+</button>
+              <button className={`h-8 w-8 rounded-lg text-sm font-bold ${textFormat.bold ? 'bg-violet-100 text-violet-700' : 'hover:bg-slate-100'}`} onClick={() => updateTextFormat({ bold: !textFormat.bold })}>B</button>
+              <button className={`h-8 w-8 rounded-lg text-sm italic ${textFormat.italic ? 'bg-violet-100 text-violet-700' : 'hover:bg-slate-100'}`} onClick={() => updateTextFormat({ italic: !textFormat.italic })}>I</button>
             </div>
-            <textarea
-              ref={textAreaRef}
-              autoFocus
-              value={textEditor.value}
-              onPointerDownCapture={(event) => event.stopPropagation()}
-              onPointerDown={(event) => event.stopPropagation()}
-              onMouseDownCapture={(event) => event.stopPropagation()}
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                updateLiveText({ ...textEditor, value: nextValue });
-              }}
-              onBlur={() => {
-                window.setTimeout(() => {
-                  if (document.activeElement !== textAreaRef.current) commitTextEditor();
-                }, 120);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  cancelTextEditor();
-                }
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  commitTextEditor();
-                }
-              }}
-              className="fixed z-[140] min-h-12 resize both rounded-lg border-2 border-violet-500 bg-white/25 px-3 py-2 leading-tight text-slate-950 shadow-xl outline-none ring-4 ring-violet-200/45 backdrop-blur-[1px]"
+            <div
+              className="fixed z-[140]"
               style={{
-                left: Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220)),
-                top: Math.min(Math.max(56, position.top), Math.max(56, windowSize.height - 120)),
-                width: Math.min(Math.max(220, textEditor.width * stageScale), Math.max(220, windowSize.width - 24)),
-                minWidth: 120,
-                fontSize: Math.max(18, textEditor.fontSize * stageScale),
-                fontWeight: textEditor.fontStyle.includes('bold') ? 700 : 400,
-                fontStyle: textEditor.fontStyle.includes('italic') ? 'italic' : 'normal',
-                color: textEditor.fill,
-                lineHeight: 1.18,
+                left: editorLeft,
+                top: editorTop,
+                width: editorWidth,
+                height: editorHeight,
                 pointerEvents: 'auto',
-                caretColor: '#7c3aed',
               }}
-              placeholder="Wpisz tekst..."
-            />
+              onPointerDownCapture={(event) => event.stopPropagation()}
+              onMouseDownCapture={(event) => event.stopPropagation()}
+            >
+              <span className={`${handleClass} -left-1.5 -top-1.5`} />
+              <span className={`${handleClass} left-1/2 -top-1.5 -translate-x-1/2`} />
+              <span className={`${handleClass} -right-1.5 -top-1.5`} />
+              <span className={`${handleClass} -left-1.5 top-1/2 -translate-y-1/2`} />
+              <span className={`${handleClass} -right-1.5 top-1/2 -translate-y-1/2`} />
+              <span className={`${handleClass} -bottom-1.5 -left-1.5`} />
+              <span className={`${handleClass} left-1/2 -bottom-1.5 -translate-x-1/2`} />
+              <span className={`${handleClass} -bottom-1.5 -right-1.5`} />
+              <textarea
+                ref={textAreaRef}
+                autoFocus
+                value={textEditor.value}
+                onPointerDown={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  updateLiveText({ ...textEditor, value: nextValue });
+                }}
+                onBlur={() => {
+                  window.setTimeout(() => {
+                    if (document.activeElement !== textAreaRef.current) commitTextEditor();
+                  }, 120);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    cancelTextEditor();
+                  }
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    commitTextEditor();
+                  }
+                }}
+                className="h-full min-h-12 w-full resize both rounded-none border border-violet-500 bg-transparent px-2 py-1 leading-tight text-slate-950 outline-none"
+                style={{
+                  minWidth: 120,
+                  fontSize: Math.max(18, textEditor.fontSize * stageScale),
+                  fontWeight: textEditor.fontStyle.includes('bold') ? 700 : 400,
+                  fontStyle: textEditor.fontStyle.includes('italic') ? 'italic' : 'normal',
+                  color: textEditor.fill,
+                  lineHeight: 1.18,
+                  caretColor: '#7c3aed',
+                }}
+                placeholder="Wpisz tekst..."
+              />
+            </div>
           </>
         );
       })()}

@@ -7,9 +7,7 @@ import { BoardSaveData, useBoardStore } from '../store/useBoardStore';
 const getBoardAiUrl = () => {
   const params = new URLSearchParams(window.location.search);
   const api = params.get('api') || process.env.NEXT_PUBLIC_BOARD_API_URL || 'https://core-czki.pl/uczen/board_api.php';
-  const normalizedApi = window.location.protocol === 'https:' && api.includes('koreporeczki.cba.pl')
-    ? 'https://core-czki.pl/uczen/board_api.php'
-    : window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
+  const normalizedApi = window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
   const url = new URL(normalizedApi, window.location.href);
   url.searchParams.set('action', 'ai_solve');
   return url.toString();
@@ -45,21 +43,23 @@ const renderAiAnswer = (text: string) => {
     .replace(/```(?:[a-zA-Z]+)?\n?/g, '')
     .replace(/\\\[/g, '$$')
     .replace(/\\\]/g, '$$')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
     .trim();
 
   if (!normalized) return null;
 
   const blocks = normalized.split(/\n{2,}/).filter((block) => block.trim() !== '');
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 text-[13px] leading-relaxed">
       {blocks.map((block, blockIndex) => {
         const trimmed = block.trim();
         const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean);
-        const isMathBlock = lines.length > 1 && lines.every((line) => /^[{(]?[0-9a-zA-Z\\+\-*/=^_.,;: ]+[)}]?$/.test(line));
+        const isMathLine = (line: string) => /[=^_\\]|sqrt|frac|\|.*\||\d+\s*[+\-*/]/.test(line);
+        const isMathBlock = lines.length > 1 && lines.every((line) => isMathLine(line) || /^[{}()[\],.;:a-zA-Z0-9\s+\-*/]+$/.test(line));
 
         if (trimmed.startsWith('#')) {
           return (
-            <h3 key={blockIndex} className="text-base font-black text-slate-950">
+            <h3 key={blockIndex} className="text-sm font-black text-slate-950">
               {renderInline(trimmed.replace(/^#+\s*/, ''))}
             </h3>
           );
@@ -67,9 +67,9 @@ const renderAiAnswer = (text: string) => {
 
         if (isMathBlock || trimmed.startsWith('$$')) {
           return (
-            <div key={blockIndex} className="rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 font-semibold leading-8 text-slate-950">
+            <div key={blockIndex} className="overflow-x-auto rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 font-mono text-[12px] font-semibold leading-6 text-slate-950">
               {lines.map((line, lineIndex) => (
-                <div key={lineIndex}>{line.replace(/\$\$/g, '')}</div>
+                <div key={lineIndex} className="whitespace-pre-wrap break-words">{line.replace(/\$\$/g, '')}</div>
               ))}
             </div>
           );
@@ -77,16 +77,16 @@ const renderAiAnswer = (text: string) => {
 
         if (/^(\d+\.|[-•])\s/.test(trimmed)) {
           return (
-            <div key={blockIndex} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 leading-7 text-slate-800">
+            <div key={blockIndex} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-slate-800">
               {lines.map((line, lineIndex) => (
-                <div key={lineIndex}>{renderInline(line)}</div>
+                <div key={lineIndex} className="whitespace-pre-wrap break-words">{renderInline(line)}</div>
               ))}
             </div>
           );
         }
 
         return (
-          <p key={blockIndex} className="leading-7 text-slate-800">
+          <p key={blockIndex} className="whitespace-pre-wrap break-words text-slate-800">
             {renderInline(trimmed)}
           </p>
         );
