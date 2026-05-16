@@ -61,6 +61,7 @@ function BoardPersistence() {
   const dots = useBoardStore((state) => state.dots);
   const theme = useBoardStore((state) => state.theme);
   const loadedRef = useRef(false);
+  const lastBoardJsonRef = useRef('');
 
   const route = useMemo<BoardRoute | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -81,7 +82,9 @@ function BoardPersistence() {
         const data = await response.json();
         if (data.status === 'success' && data.board) {
           loadBoard(data.board);
-          window.localStorage.setItem(route.storageKey, JSON.stringify(data.board));
+          const boardJson = JSON.stringify(data.board);
+          lastBoardJsonRef.current = boardJson;
+          window.localStorage.setItem(route.storageKey, boardJson);
           loadedFromServer = true;
         }
       } catch (error) {
@@ -90,7 +93,10 @@ function BoardPersistence() {
         if (!loadedFromServer) {
           try {
             const saved = window.localStorage.getItem(route.storageKey);
-            if (saved) loadBoard(JSON.parse(saved));
+            if (saved) {
+              lastBoardJsonRef.current = saved;
+              loadBoard(JSON.parse(saved));
+            }
           } catch (error) {
             console.warn('Nie udało się wczytać lokalnej kopii tablicy.', error);
           }
@@ -103,11 +109,44 @@ function BoardPersistence() {
   }, [loadBoard, route]);
 
   useEffect(() => {
+    if (!route) return;
+    const interval = window.setInterval(async () => {
+      if (!loadedRef.current) return;
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTyping = activeElement?.tagName === 'TEXTAREA' || activeElement?.tagName === 'INPUT' || activeElement?.isContentEditable;
+      if (isTyping) return;
+
+      try {
+        const url = new URL(route.apiUrl);
+        url.searchParams.set('action', 'load');
+        url.searchParams.set('room', route.room);
+        url.searchParams.set('lesson', route.lesson);
+        const response = await fetch(url.toString(), { credentials: 'include' });
+        const data = await response.json();
+        if (data.status !== 'success' || !data.board) return;
+
+        const boardJson = JSON.stringify(data.board);
+        if (boardJson && boardJson !== lastBoardJsonRef.current) {
+          lastBoardJsonRef.current = boardJson;
+          window.localStorage.setItem(route.storageKey, boardJson);
+          loadBoard(data.board);
+        }
+      } catch (error) {
+        console.warn('Nie udało się odświeżyć tablicy z serwera.', error);
+      }
+    }, 1500);
+
+    return () => window.clearInterval(interval);
+  }, [loadBoard, route]);
+
+  useEffect(() => {
     if (!loadedRef.current || !route) return;
     const timeout = window.setTimeout(() => {
       try {
         const board = exportBoard();
-        window.localStorage.setItem(route.storageKey, JSON.stringify(board));
+        const boardJson = JSON.stringify(board);
+        lastBoardJsonRef.current = boardJson;
+        window.localStorage.setItem(route.storageKey, boardJson);
         window.localStorage.setItem(`moja-tablica:last-board:${route.room}`, route.lesson);
 
         const url = new URL(route.apiUrl);
@@ -128,7 +167,7 @@ function BoardPersistence() {
       } catch (error) {
         console.warn('Nie udało się zapisać tablicy.', error);
       }
-    }, 500);
+    }, 180);
 
     return () => window.clearTimeout(timeout);
   }, [bgColor, dots, exportBoard, grid, images, lines, pdfDocuments, route, shapes, texts, theme]);

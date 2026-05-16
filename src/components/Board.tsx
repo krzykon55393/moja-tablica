@@ -76,6 +76,8 @@ type TextEditorState = {
   value: string;
   width: number;
   fontSize: number;
+  fontStyle: string;
+  fill: string;
 };
 
 type AiSelectionRect = {
@@ -100,6 +102,7 @@ export default function Board() {
   const [cropImageId, setCropImageId] = useState<string | null>(null);
   const [exportPatternBounds, setExportPatternBounds] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
+  const [textFormat, setTextFormat] = useState({ fontSize: 28, bold: false, italic: false });
   const [aiSelectionRect, setAiSelectionRect] = useState<AiSelectionRect | null>(null);
   const isDrawing = useRef(false);
   const trRef = useRef<any>(null);
@@ -409,6 +412,70 @@ export default function Board() {
   const openTextEditor = (text: TextEditorState) => {
     setSelectedId(text.id || null);
     setTextEditor(text);
+    setTextFormat({
+      fontSize: text.fontSize,
+      bold: text.fontStyle.includes('bold'),
+      italic: text.fontStyle.includes('italic'),
+    });
+  };
+
+  const getTextFontStyle = (format = textFormat) => {
+    const parts = [];
+    if (format.bold) parts.push('bold');
+    if (format.italic) parts.push('italic');
+    return parts.join(' ') || 'normal';
+  };
+
+  const updateLiveText = (nextEditor: TextEditorState) => {
+    if (!nextEditor.value.trim()) {
+      setTextEditor(nextEditor);
+      return;
+    }
+
+    if (nextEditor.id) {
+      updateText(nextEditor.id, {
+        text: nextEditor.value,
+        width: Math.max(120, nextEditor.width),
+        fontSize: nextEditor.fontSize,
+        fontStyle: nextEditor.fontStyle,
+        fill: nextEditor.fill,
+      }, { record: false });
+      setTextEditor(nextEditor);
+      return;
+    }
+
+    const id = 'text-' + Date.now().toString();
+    const createdEditor = { ...nextEditor, id };
+    addText({
+      id,
+      x: nextEditor.x,
+      y: nextEditor.y,
+      text: nextEditor.value,
+      width: Math.max(180, nextEditor.width),
+      fontSize: nextEditor.fontSize,
+      fontStyle: nextEditor.fontStyle,
+      fill: nextEditor.fill,
+    }, { record: true, select: true, keepTool: true });
+    setTextEditor(createdEditor);
+  };
+
+  const updateTextFormat = (changes: Partial<typeof textFormat>) => {
+    setTextFormat((current) => {
+      const nextFormat = { ...current, ...changes };
+      const fontStyle = getTextFontStyle(nextFormat);
+      setTextEditor((editor) => {
+        if (!editor) return editor;
+        const nextEditor = { ...editor, fontSize: nextFormat.fontSize, fontStyle };
+        if (nextEditor.id) {
+          updateText(nextEditor.id, {
+            fontSize: nextEditor.fontSize,
+            fontStyle: nextEditor.fontStyle,
+          }, { record: false });
+        }
+        return nextEditor;
+      });
+      return nextFormat;
+    });
   };
 
   const commitTextEditor = () => {
@@ -421,6 +488,8 @@ export default function Board() {
           text: value,
           width: Math.max(120, textEditor.width),
           fontSize: textEditor.fontSize,
+          fontStyle: textEditor.fontStyle,
+          fill: textEditor.fill,
         });
       } else {
         addText({
@@ -430,7 +499,8 @@ export default function Board() {
           text: value,
           width: Math.max(180, textEditor.width),
           fontSize: textEditor.fontSize,
-          fill: strokeColor,
+          fontStyle: textEditor.fontStyle,
+          fill: textEditor.fill,
         });
       }
     }
@@ -695,7 +765,9 @@ export default function Board() {
         y: pos.y,
         value: '',
         width: 260,
-        fontSize: 28,
+        fontSize: textFormat.fontSize,
+        fontStyle: getTextFontStyle(),
+        fill: strokeColor,
       });
       return;
     }
@@ -1301,6 +1373,7 @@ export default function Board() {
               text={text.text}
               width={text.width}
               fontSize={text.fontSize}
+              fontStyle={text.fontStyle || 'normal'}
               fill={text.fill || strokeColor}
               rotation={text.rotation || 0}
               lineHeight={1.18}
@@ -1314,6 +1387,8 @@ export default function Board() {
                     value: text.text,
                     width: text.width,
                     fontSize: text.fontSize,
+                    fontStyle: text.fontStyle || 'normal',
+                    fill: text.fill || strokeColor,
                   });
                   return;
                 }
@@ -1326,6 +1401,8 @@ export default function Board() {
                 value: text.text,
                 width: text.width,
                 fontSize: text.fontSize,
+                fontStyle: text.fontStyle || 'normal',
+                fill: text.fill || strokeColor,
               })}
               onDblTap={() => openTextEditor({
                 id: text.id,
@@ -1334,6 +1411,8 @@ export default function Board() {
                 value: text.text,
                 width: text.width,
                 fontSize: text.fontSize,
+                fontStyle: text.fontStyle || 'normal',
+                fill: text.fill || strokeColor,
               })}
               onDragMove={(e) => handleNodeEdgeDrag(e, e.currentTarget)}
               onDragEnd={(e) => updateText(text.id, { x: e.currentTarget.x(), y: e.currentTarget.y() })}
@@ -1471,47 +1550,67 @@ export default function Board() {
       {textEditor && (() => {
         const position = getTextEditorScreenPosition();
         return (
-          <textarea
-            ref={textAreaRef}
-            autoFocus
-            value={textEditor.value}
-            onPointerDownCapture={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDownCapture={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setTextEditor((current) => current ? { ...current, value: nextValue } : current);
-            }}
-            onBlur={() => {
-              window.setTimeout(() => {
-                if (document.activeElement !== textAreaRef.current) commitTextEditor();
-              }, 120);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                cancelTextEditor();
-              }
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                commitTextEditor();
-              }
-            }}
-            className="fixed z-[140] min-h-12 resize both rounded-lg border-2 border-violet-500 bg-white px-3 py-2 leading-tight text-slate-950 shadow-2xl outline-none ring-4 ring-violet-200/70"
-            style={{
-              left: Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220)),
-              top: Math.min(Math.max(12, position.top), Math.max(12, windowSize.height - 120)),
-              width: Math.min(Math.max(220, textEditor.width * stageScale), Math.max(220, windowSize.width - 24)),
-              minWidth: 120,
-              fontSize: Math.max(18, textEditor.fontSize * stageScale),
-              lineHeight: 1.18,
-              pointerEvents: 'auto',
-              caretColor: '#7c3aed',
-            }}
-            placeholder="Wpisz tekst..."
-          />
+          <>
+            <div
+              className="fixed z-[141] flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 text-slate-950 shadow-xl"
+              style={{
+                left: Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220)),
+                top: Math.max(8, Math.min(position.top - 48, windowSize.height - 104)),
+                pointerEvents: 'auto',
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.preventDefault()}
+            >
+              <button className="h-9 w-9 rounded-lg text-lg font-semibold hover:bg-slate-100" onClick={() => updateTextFormat({ fontSize: Math.max(10, textFormat.fontSize - 2) })}>-</button>
+              <button className="h-9 w-9 rounded-lg text-lg font-semibold hover:bg-slate-100" onClick={() => updateTextFormat({ fontSize: Math.min(96, textFormat.fontSize + 2) })}>+</button>
+              <button className={`h-9 w-9 rounded-lg text-base font-bold ${textFormat.bold ? 'bg-violet-100 text-violet-700' : 'hover:bg-slate-100'}`} onClick={() => updateTextFormat({ bold: !textFormat.bold })}>B</button>
+              <button className={`h-9 w-9 rounded-lg text-base italic ${textFormat.italic ? 'bg-violet-100 text-violet-700' : 'hover:bg-slate-100'}`} onClick={() => updateTextFormat({ italic: !textFormat.italic })}>I</button>
+            </div>
+            <textarea
+              ref={textAreaRef}
+              autoFocus
+              value={textEditor.value}
+              onPointerDownCapture={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDownCapture={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                updateLiveText({ ...textEditor, value: nextValue });
+              }}
+              onBlur={() => {
+                window.setTimeout(() => {
+                  if (document.activeElement !== textAreaRef.current) commitTextEditor();
+                }, 120);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  cancelTextEditor();
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  commitTextEditor();
+                }
+              }}
+              className="fixed z-[140] min-h-12 resize both rounded-lg border-2 border-violet-500 bg-white px-3 py-2 leading-tight text-slate-950 shadow-2xl outline-none ring-4 ring-violet-200/70"
+              style={{
+                left: Math.min(Math.max(12, position.left), Math.max(12, windowSize.width - 220)),
+                top: Math.min(Math.max(56, position.top), Math.max(56, windowSize.height - 120)),
+                width: Math.min(Math.max(220, textEditor.width * stageScale), Math.max(220, windowSize.width - 24)),
+                minWidth: 120,
+                fontSize: Math.max(18, textEditor.fontSize * stageScale),
+                fontWeight: textEditor.fontStyle.includes('bold') ? 700 : 400,
+                fontStyle: textEditor.fontStyle.includes('italic') ? 'italic' : 'normal',
+                color: textEditor.fill,
+                lineHeight: 1.18,
+                pointerEvents: 'auto',
+                caretColor: '#7c3aed',
+              }}
+              placeholder="Wpisz tekst..."
+            />
+          </>
         );
       })()}
       {selectedImage && (

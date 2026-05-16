@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type Tool = 'select' | 'pan' | 'draw' | 'highlight' | 'ai' | 'erase' | 'shape' | 'text' | 'image';
 export type LineData = { id: string; points: number[]; stroke?: string; strokeWidth?: number; dash?: number[]; opacity?: number };
-export type TextData = { id: string; x: number; y: number; text: string; fontSize: number; width: number; rotation?: number; fill?: string };
+export type TextData = { id: string; x: number; y: number; text: string; fontSize: number; width: number; rotation?: number; fill?: string; fontStyle?: string };
 export type ImageCrop = { x: number; y: number; width: number; height: number };
 export type ImageData = {
   id: string;
@@ -76,6 +76,7 @@ type HistorySnapshot = {
   shapes: ShapeData[];
 };
 type HistoryOptions = { record?: boolean };
+type TextMutationOptions = HistoryOptions & { select?: boolean; keepTool?: boolean };
 export type BoardSaveData = {
   lines: LineData[];
   texts: TextData[];
@@ -138,8 +139,8 @@ interface BoardState {
   lines: LineData[];
   setLines: (updater: any, options?: HistoryOptions) => void;
   texts: TextData[];
-  addText: (text: TextData) => void;
-  updateText: (id: string, newData: Partial<TextData>) => void;
+  addText: (text: TextData, options?: TextMutationOptions) => void;
+  updateText: (id: string, newData: Partial<TextData>, options?: HistoryOptions) => void;
   images: ImageData[];
   addImage: (image: ImageData) => void;
   updateImage: (id: string, newData: Partial<ImageData>) => void;
@@ -242,9 +243,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     lines: typeof updater === 'function' ? updater(state.lines) : updater
   })),
   texts: [],
-  addText: (text) => set((state) => ({ ...withHistory(state), texts: [...state.texts, text], selectedId: text.id, activeTool: 'select' })),
-  updateText: (id, newData) => set((state) => ({
-    ...withHistory(state),
+  addText: (text, options = { record: true, select: true, keepTool: false }) => set((state) => ({
+    ...(options.record === false ? {} : withHistory(state)),
+    texts: [...state.texts, text],
+    selectedId: options.select === false ? state.selectedId : text.id,
+    activeTool: options.keepTool ? state.activeTool : 'select',
+  })),
+  updateText: (id, newData, options = { record: true }) => set((state) => ({
+    ...(options.record === false ? {} : withHistory(state)),
     texts: state.texts.map((text) => text.id === id ? { ...text, ...newData } : text)
   })),
   images: [],
