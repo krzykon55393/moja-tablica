@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Grip, Loader2, Minus, Move, Sparkles, X } from 'lucide-react';
 import { BoardSaveData, useBoardStore } from '../store/useBoardStore';
 
@@ -109,19 +109,19 @@ export default function BoardAiPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [size, setSize] = useState({ width: 350, height: 430 });
   const [pos, setPos] = useState({ x: 20, y: 96 });
+  const lastAutoCaptureRef = useRef('');
 
   const boardContext = useMemo(() => isOpen ? summarizeBoard(exportBoard()) : '', [exportBoard, isOpen]);
 
-  if (!isOpen) return null;
-
-  const askAi = async () => {
+  const askAi = useCallback(async (promptOverride?: string) => {
+    const promptToSend = promptOverride ?? prompt;
     setIsLoading(true);
     try {
       const response = await fetch(getBoardAiUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt,
+          prompt: promptToSend,
           context: boardContext,
           image: aiCapture?.dataUrl || '',
         }),
@@ -133,7 +133,17 @@ export default function BoardAiPanel() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [aiCapture, boardContext, prompt]);
+
+  useEffect(() => {
+    if (!isOpen || !aiCapture?.dataUrl) return;
+    if (lastAutoCaptureRef.current === aiCapture.dataUrl) return;
+    lastAutoCaptureRef.current = aiCapture.dataUrl;
+    setAnswer('');
+    void askAi('');
+  }, [aiCapture?.dataUrl, askAi, isOpen]);
+
+  if (!isOpen) return null;
 
   return (
     <aside
@@ -212,7 +222,7 @@ export default function BoardAiPanel() {
           />
 
           <button
-            onClick={askAi}
+            onClick={() => void askAi()}
             disabled={isLoading || (!aiCapture && prompt.trim() === '')}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-black text-white transition hover:bg-violet-700 disabled:opacity-60"
           >
