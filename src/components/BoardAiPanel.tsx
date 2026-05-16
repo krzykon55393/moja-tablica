@@ -21,17 +21,35 @@ const summarizeBoard = (board: BoardSaveData) => {
   return textParts.join('\n\n').slice(0, 10000);
 };
 
+const formatMathText = (text: string) => text
+  .replace(/\\sqrt\{([^{}]+)\}/g, '√$1')
+  .replace(/sqrt\(([^()]+)\)/gi, '√$1')
+  .replace(/sqrt\{([^{}]+)\}/gi, '√$1')
+  .replace(/\^\s*2/g, '²')
+  .replace(/\^\s*3/g, '³')
+  .replace(/\^\s*\(([^)]+)\)/g, '^$1')
+  .replace(/\\cdot/g, '·')
+  .replace(/\s+\*\s+/g, ' · ')
+  .replace(/(\d)\s*\*\s*([a-zA-Z√])/g, '$1 · $2')
+  .replace(/([a-zA-Z)])\s*\*\s*(\d|[a-zA-Z√])/g, '$1 · $2')
+  .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '$1/$2')
+  .replace(/\\leq/g, '≤')
+  .replace(/\\geq/g, '≥')
+  .replace(/\\neq/g, '≠')
+  .replace(/\\approx/g, '≈')
+  .replace(/\\pi/g, 'π');
+
 const renderInline = (text: string) => {
-  const parts = text.split(/(\*\*[^*]+\*\*|\$[^$]+\$|`[^`]+`)/g).filter(Boolean);
+  const parts = formatMathText(text).split(/(\*\*[^*]+\*\*|\$[^$]+\$|`[^`]+`)/g).filter(Boolean);
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={index}>{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith('$') && part.endsWith('$')) {
-      return <span key={index} className="rounded bg-violet-50 px-1 font-semibold text-violet-900">{part.slice(1, -1)}</span>;
+      return <span key={index} className="rounded bg-violet-50 px-1 font-semibold text-violet-900">{formatMathText(part.slice(1, -1))}</span>;
     }
     if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={index} className="rounded bg-slate-100 px-1 font-semibold text-slate-900">{part.slice(1, -1)}</code>;
+      return <code key={index} className="rounded bg-slate-100 px-1 font-semibold text-slate-900">{formatMathText(part.slice(1, -1))}</code>;
     }
     return <span key={index}>{part}</span>;
   });
@@ -69,7 +87,7 @@ const renderAiAnswer = (text: string) => {
           return (
             <div key={blockIndex} className="overflow-x-auto rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 font-mono text-[12px] font-semibold leading-6 text-slate-950">
               {lines.map((line, lineIndex) => (
-                <div key={lineIndex} className="whitespace-pre-wrap break-words">{line.replace(/\$\$/g, '')}</div>
+                <div key={lineIndex} className="whitespace-pre-wrap break-words">{formatMathText(line.replace(/\$\$/g, ''))}</div>
               ))}
             </div>
           );
