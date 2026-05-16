@@ -671,8 +671,10 @@ export default function Board() {
 
     const clickedOnBoard = clickedOn === stage || clickedOn.name?.() === 'board-background';
     const clickedOnCropRect = isCropping && cropRectRef.current && clickedOn === cropRectRef.current;
+    const clickedOnCropAnchor = isCropping && cropTrRef.current && clickedOn.getParent?.() === cropTrRef.current;
+    const canDrawFreshCropRect = isCropping && selectedImage && pos && isPointInsideSelectedImage(pos) && !clickedOnCropAnchor && (!clickedOnCropRect || isCropRectFullImage());
 
-    if (isCropping && selectedImage && pos && !clickedOnCropRect && isPointInsideSelectedImage(pos)) {
+    if (canDrawFreshCropRect) {
       cropSelectionStart.current = pos;
       const nextRect = clampCropRect({ x: pos.x, y: pos.y, width: 12, height: 12 });
       setCropRect(nextRect);
@@ -1022,6 +1024,15 @@ export default function Board() {
       point.x <= selectedImage.x + selectedImage.width &&
       point.y >= selectedImage.y &&
       point.y <= selectedImage.y + selectedImage.height;
+  };
+
+  const isCropRectFullImage = () => {
+    if (!selectedImage || !cropRect) return false;
+    const tolerance = 2;
+    return Math.abs(cropRect.x - selectedImage.x) <= tolerance &&
+      Math.abs(cropRect.y - selectedImage.y) <= tolerance &&
+      Math.abs(cropRect.width - selectedImage.width) <= tolerance &&
+      Math.abs(cropRect.height - selectedImage.height) <= tolerance;
   };
 
   const clampPointToSelectedImage = (point: { x: number; y: number }) => {
