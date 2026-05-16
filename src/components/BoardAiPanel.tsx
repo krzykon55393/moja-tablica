@@ -30,7 +30,7 @@ const getReadableFetchError = (error: unknown) => {
 const postAiRequest = async (url: string, body: Record<string, unknown>) => {
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'omit',
     body: JSON.stringify(body),
   });
   const data = await response.json().catch(() => null);
