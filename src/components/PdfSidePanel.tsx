@@ -651,6 +651,8 @@ export default function PdfSidePanel() {
   });
 
   const startSelection = (event: React.PointerEvent<HTMLDivElement>, page: PdfPageData) => {
+    event.preventDefault();
+    event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     const scaleX = page.width / rect.width;
     const scaleY = page.height / rect.height;
@@ -662,6 +664,8 @@ export default function PdfSidePanel() {
 
   const moveSelection = (event: React.PointerEvent<HTMLDivElement>, page: PdfPageData) => {
     if (!selection || selection.pageNumber !== page.pageNumber) return;
+    event.preventDefault();
+    event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     const scaleX = page.width / rect.width;
     const scaleY = page.height / rect.height;
@@ -895,10 +899,20 @@ export default function PdfSidePanel() {
                   <button onClick={() => void addImageFromPage(page, 0)} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Dodaj</button>
                 </div>
                 <div
-                  className="relative cursor-crosshair select-none overflow-hidden rounded-xl"
+                  className="relative cursor-crosshair select-none overflow-hidden rounded-xl touch-none"
+                  style={{ touchAction: 'none' }}
                   onPointerDown={(event) => startSelection(event, page)}
                   onPointerMove={(event) => moveSelection(event, page)}
-                  onPointerUp={(event) => finishSelection(page, event.clientX, event.clientY)}
+                  onPointerUp={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    finishSelection(page, event.clientX, event.clientY);
+                  }}
+                  onPointerCancel={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setSelection(null);
+                  }}
                 >
                   <img src={page.src} alt={`Strona ${page.pageNumber}`} className="block w-full" draggable={false} />
                   {selectionRect && (

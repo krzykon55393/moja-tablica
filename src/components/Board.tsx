@@ -119,6 +119,7 @@ export default function Board() {
   const drawingStartTime = useRef(0);
   const eraseHistoryRecorded = useRef(false);
   const aiSelectionStart = useRef<{ x: number; y: number } | null>(null);
+  const cropSelectionStart = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -308,14 +309,19 @@ export default function Board() {
 
   useEffect(() => {
     if (!textEditor || !textAreaRef.current) return;
-    const frame = window.requestAnimationFrame(() => {
+    const focusTextArea = () => {
       const textArea = textAreaRef.current;
       if (!textArea) return;
       textArea.focus({ preventScroll: true });
       const cursorPosition = textArea.value.length;
       textArea.setSelectionRange(cursorPosition, cursorPosition);
-    });
-    return () => window.cancelAnimationFrame(frame);
+    };
+    const frame = window.requestAnimationFrame(focusTextArea);
+    const timer = window.setTimeout(focusTextArea, 80);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
   }, [textEditor?.id, textEditor?.x, textEditor?.y]);
 
   useEffect(() => {
@@ -613,6 +619,16 @@ export default function Board() {
     }
 
     const clickedOnBoard = clickedOn === stage || clickedOn.name?.() === 'board-background';
+    const clickedOnCropRect = isCropping && cropRectRef.current && clickedOn === cropRectRef.current;
+
+    if (isCropping && selectedImage && pos && !clickedOnCropRect && isPointInsideSelectedImage(pos)) {
+      cropSelectionStart.current = pos;
+      const nextRect = clampCropRect({ x: pos.x, y: pos.y, width: 12, height: 12 });
+      setCropRect(nextRect);
+      return;
+    }
+
+    if (clickedOnCropRect) return;
 
     if (activeTool === 'ai' && pos) {
       setSelectedId(null);
@@ -674,11 +690,25 @@ export default function Board() {
   };
 
   const handlePointerMove = (e: any) => {
+    const stage = e.target.getStage();
+    const pos = getRelativePointerPosition(stage);
+
+    if (isCropping && cropSelectionStart.current && selectedImage && pos) {
+      const start = cropSelectionStart.current;
+      const end = clampPointToSelectedImage(pos);
+      setCropRect(clampCropRect({
+        x: Math.min(start.x, end.x),
+        y: Math.min(start.y, end.y),
+        width: Math.abs(end.x - start.x),
+        height: Math.abs(end.y - start.y),
+      }));
+      return;
+    }
+
     if (e.evt && (isDrawing.current || e.evt.buttons === 1)) {
       panNearViewportEdge(e.evt.clientX, e.evt.clientY);
     }
 
-    const pos = getRelativePointerPosition(e.target.getStage());
     if (pos) setCursorPosition(pos);
 
     if (activeTool === 'ai' && aiSelectionStart.current && pos) {
@@ -729,6 +759,11 @@ export default function Board() {
   };
 
   const handlePointerUp = () => {
+    if (cropSelectionStart.current) {
+      cropSelectionStart.current = null;
+      return;
+    }
+
     if (activeTool === 'ai' && aiSelectionStart.current) {
       const rect = aiSelectionRect;
       aiSelectionStart.current = null;
@@ -930,6 +965,22 @@ export default function Board() {
     return { x, y, width, height };
   };
 
+  const isPointInsideSelectedImage = (point: { x: number; y: number }) => {
+    if (!selectedImage) return false;
+    return point.x >= selectedImage.x &&
+      point.x <= selectedImage.x + selectedImage.width &&
+      point.y >= selectedImage.y &&
+      point.y <= selectedImage.y + selectedImage.height;
+  };
+
+  const clampPointToSelectedImage = (point: { x: number; y: number }) => {
+    if (!selectedImage) return point;
+    return {
+      x: Math.max(selectedImage.x, Math.min(point.x, selectedImage.x + selectedImage.width)),
+      y: Math.max(selectedImage.y, Math.min(point.y, selectedImage.y + selectedImage.height)),
+    };
+  };
+
   const syncCropRectFromNode = (node: any, sourceRect: ImageCrop) => {
     const nextRect = clampCropRect({
       x: node.x(),
@@ -1110,7 +1161,7 @@ export default function Board() {
             <CanvasImage 
               key={img.id} 
               imgData={img} 
-              isDraggable={activeTool === 'select'}
+              isDraggable={activeTool === 'select' && !isCropping}
               onSelect={() => {
                 if (activeTool === 'select') {
                   setSelectedId(img.id);
@@ -1260,7 +1311,20 @@ export default function Board() {
                   syncCropRectFromNode(e.currentTarget, cropRect);
                 }}
               />
-              <Transformer ref={cropTrRef} rotateEnabled={false} />
+              <Transformer
+                ref={cropTrRef}
+                rotateEnabled={false}
+                enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
+                anchorSize={22}
+                borderStroke="#7c3aed"
+                anchorStroke="#7c3aed"
+                anchorFill="#ffffff"
+                borderStrokeWidth={2}
+                boundBoxFunc={(oldBox, newBox) => {
+                  if (Math.abs(newBox.width) < 12 || Math.abs(newBox.height) < 12) return oldBox;
+                  return newBox;
+                }}
+              />
             </>
           )}
 
@@ -1319,12 +1383,22 @@ export default function Board() {
         return (
           <textarea
             ref={textAreaRef}
+            autoFocus
             value={textEditor.value}
+            onPointerDownCapture={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
+            onMouseDownCapture={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
-            onChange={(event) => setTextEditor({ ...textEditor, value: event.target.value })}
-            onBlur={commitTextEditor}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setTextEditor((current) => current ? { ...current, value: nextValue } : current);
+            }}
+            onBlur={() => {
+              window.setTimeout(() => {
+                if (document.activeElement !== textAreaRef.current) commitTextEditor();
+              }, 120);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.preventDefault();
