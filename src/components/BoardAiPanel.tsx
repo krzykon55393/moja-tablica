@@ -10,32 +10,23 @@ const getBoardApiBaseUrl = () => {
   return window.location.protocol === 'https:' && api.startsWith('http://') ? api.replace(/^http:\/\//, 'https://') : api;
 };
 
-const getBoardAiUrls = () => {
-  const url = new URL(getBoardApiBaseUrl(), window.location.href);
-  url.searchParams.set('action', 'ai_solve');
-
-  const legacyUrl = new URL(url.toString());
-  legacyUrl.pathname = legacyUrl.pathname.replace(/board_api\.php$/i, 'board_ai.php');
-  legacyUrl.searchParams.delete('action');
-
-  const urls = [url.toString(), legacyUrl.toString()];
-  return [...new Set(urls)];
-};
-
 const getReadableFetchError = (error: unknown) => {
   if (error instanceof Error && error.message) return error.message;
   return 'Nieznany błąd połączenia.';
 };
 
-const postAiRequest = async (url: string, body: Record<string, unknown>) => {
-  const response = await fetch(url, {
+const postAiRequest = async (body: Record<string, unknown>) => {
+  const response = await fetch('/api/board-ai', {
     method: 'POST',
-    credentials: 'omit',
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...body,
+      apiUrl: getBoardApiBaseUrl(),
+    }),
   });
   const data = await response.json().catch(() => null);
   if (!response.ok || data?.status !== 'success') {
-    throw new Error(data?.message || `Błąd AI (${response.status}).`);
+    throw new Error(data?.message || `Błąd połączenia z AI (${response.status}).`);
   }
   return String(data.answer || '').trim();
 };
@@ -167,18 +158,8 @@ export default function BoardAiPanel() {
           context: boardContext,
           image: aiCapture?.dataUrl || '',
       };
-      const urls = getBoardAiUrls();
-      let lastError = '';
-      for (const url of urls) {
-        try {
-          const answerText = await postAiRequest(url, body);
-          setAnswer(answerText || 'AI nie zwróciło odpowiedzi.');
-          return;
-        } catch (requestError) {
-          lastError = getReadableFetchError(requestError);
-        }
-      }
-      setAnswer(`Nie udało się połączyć z AI. Ostatni błąd: ${lastError}`);
+      const answerText = await postAiRequest(body);
+      setAnswer(answerText || 'AI nie zwróciło odpowiedzi.');
     } catch (error) {
       setAnswer(`Nie udało się połączyć z AI. ${getReadableFetchError(error)}`);
     } finally {
